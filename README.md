@@ -1,0 +1,2 @@
+# gaboshlib
+library for bash
