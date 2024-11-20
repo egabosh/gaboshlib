@@ -10,10 +10,10 @@ It is still under development and is currently only partially functional.
 
 Copyright (c) 2022-2024 egabosh (aka olli)
 
-The software provided here is called dabo (crypto bot)
+The software provided here is called gaboshlib
 
-dabo is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+gaboshlib is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
 
-dabo is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty ofMERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+gaboshlib is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty ofMERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License along with dabo (see COPYING file). If not, see <http://www.gnu.org/licenses/>.
