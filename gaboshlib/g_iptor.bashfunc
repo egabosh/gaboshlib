@@ -1,0 +1,5 @@
+#!/bin/bash
+
+function g_iptor {
+ g_iptor=$(curl -s --connect-timeout 3 --proxy localhost:8118 http://checkip.amazonaws.com/)
+}

@@ -1,0 +1,7 @@
+#!/bin/bash
+
+function g_valid_ip {
+  g_valid_ipv4 $1 && return 0
+  g_valid_ipv6 $1 && return 0
+  return 1
+}

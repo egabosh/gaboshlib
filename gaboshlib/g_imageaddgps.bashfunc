@@ -1,0 +1,26 @@
+#!/bin/bash
+
+function g_imageaddgps {
+ local g_gps=$@
+ if echo "$g_gps" | egrep -q "^[NS] [0-9\.\-]+ [EW] [0-9\.\-]+$"
+ then
+  local ns=$(echo $g_gps | cut -d" " -f1)
+  local ns_coord=$(echo $g_gps | cut -d" " -f2)
+  local wo=$(echo $g_gps | cut -d" " -f3)
+  local wo_coord=$(echo $g_gps | cut -d" " -f4)
+  ls *.jpg *.JPG | while read g_image
+  do
+   ns_coord=$(echo $ns_coord | perl -pe "s/[0-9][0-9][0-9]\$/$((RANDOM%899+100))/")
+   wo_coord=$(echo $wo_coord | perl -pe "s/[0-9][0-9][0-9]\$/$((RANDOM%899+100))/")
+   local g_timestamp=$(ls --time-style='+%Y%m%d%H%M' -l "$g_image" | cut -d" " -f6)
+   # For update-copy or rsync one second newer file
+   #g_timestamp=$((g_timestamp+1))
+   exiftool -overwrite_original -P -GPSLatitudeRef=$ns -GPSLatitude=$ns_coord -GPSLongitudeRef=$wo -GPSLongitude=$wo_coord $g_image
+   touch -t $g_timestamp "$g_image"
+  done
+ else
+  g_echo_error "$g_glps Fehlerhafte GPS-Koordinaten. Folgendes Format: N 52.241202 E 9.100710"
+  return 1
+ fi
+}
+

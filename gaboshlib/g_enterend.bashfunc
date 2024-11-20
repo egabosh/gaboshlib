@@ -1,0 +1,7 @@
+#!/bin/bash
+
+function g_enterend {
+ g_echo "Enter/Return zum Beenden drücken"
+ read x
+ exit 0
+}

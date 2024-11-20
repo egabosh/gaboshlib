@@ -1,0 +1,17 @@
+#!/bin/bash
+
+function g_imagerenameIMG_createdate {
+ find . -iname "*.jpg" | egrep -v '\/IMG_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_[0-9][0-9][0-9][0-9][0-9][0-9].jpg$' | while read g_image
+ do
+  exiftool "$g_image" >"$g_tmp/exiftool"
+  if egrep -q "^Create Date" "$g_tmp/exiftool"
+  then
+   local g_imgdir=$(dirname "$g_image")
+   local g_tofile="IMG_$(egrep "^Create Date" "$g_tmp/exiftool" | head -n1 | perl -pe 's/^Create Date.+: //; s/://g; s/ /_/;').jpg"
+   mv -vn "$g_image" "$g_imgdir/$g_tofile"
+  else
+   g_echo_warn "ERR: $g_image no Create Date found"
+  fi
+ done
+}
+

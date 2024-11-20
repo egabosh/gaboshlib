@@ -1,0 +1,33 @@
+#!/bin/bash
+
+function g_lockfile {
+ # Do not run multiple times in one script
+ [ -z $g_lockfile ] || return 0
+ g_lockfile=/var/lock/${g_scriptname}.lock
+ if [[ $EUID -ne 0 ]]
+ then
+  g_lockfile=~/.${g_scriptname}.lock
+ fi
+ if [ $g_scriptname == "bash" ]
+ then
+  g_echo_error "Not for interactive bash - scripts only"
+ else
+  if [ -f $g_lockfile ]
+  then
+   #if ps ax | grep -v grep | perl -pe 's/^ +//g' | grep ^`cat $g_lockfile` >/dev/null 2>&1
+   if [ -d /proc/$(cat $g_lockfile) ]
+   then
+    g_echo_error "PID in $g_lockfile exists - exiting..."
+    exit 1
+   else
+    g_echo_warn "Removing Lockfile $g_lockfile"
+    rm -f $g_lockfile
+   fi
+  fi
+  echo $$ >$g_lockfile
+  # Remove lockfile when the script exits/ends
+  g_trap_exit="$g_trap_exit ; rm $g_lockfile"
+  trap "$g_trap_exit" EXIT
+ fi
+}
+

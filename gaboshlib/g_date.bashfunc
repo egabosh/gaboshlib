@@ -1,0 +1,5 @@
+#!/bin/bash
+
+function g_date {
+ g_date=$(printf '%(%Y-%m-%d %H:%M:%S)T\n')
+}

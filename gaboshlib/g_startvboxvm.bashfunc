@@ -1,0 +1,6 @@
+#!/bin/bash
+
+function g_startvboxvm {
+ VBoxHeadless --startvm $1
+}
+

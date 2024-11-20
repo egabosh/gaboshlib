@@ -1,0 +1,16 @@
+#!/bin/bash
+
+function g_read {
+ if [ -z $DISPLAY ]
+ then
+  echo -n "$1: "
+  read g_read
+ else
+  g_read=$(zenity --entry --text="$1" --title="$1")
+ fi
+ g_read_clean=${g_read//[^a-zA-Z0-9 ]/_}
+ g_read_clean=${g_read_clean/[ ]/ }
+ g_read_clean=$(echo "$g_read_clean" | sed 's/^[ \t]*//;s/[ \t]*$//')
+ g_read_numonly=${g_read_clean//[^0-9]/}
+}
+

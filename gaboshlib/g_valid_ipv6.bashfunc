@@ -1,0 +1,13 @@
+#!/bin/bash
+
+function g_valid_ipv6 {
+ local ip=$1
+ regex='^([0-9a-fA-F]{0,4}:){1,7}[0-9a-fA-F]{0,4}$'
+ if [[ $ip =~ $regex ]]
+ then
+  return 0
+ else
+  return 1
+ fi
+}
+

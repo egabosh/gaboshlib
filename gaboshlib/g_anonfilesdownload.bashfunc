@@ -1,0 +1,52 @@
+#!/bin/bash
+
+function g_anonfilesdownload {
+ g_tries=10
+ [ -z $1 ] && return 1
+ g_anonfileslink=$1
+ g_wgetout=$g_tmp/wgetout-$RANDOM
+ [ -n $2 ] && g_wgetout="$2"
+ rm -f "$g_wgetout"
+ unset https_proxy
+ unset http_proxy
+ # Get file-Link from Link
+ [ -f ~/.cache/g_anonfiles-link2file ] && find ~/.cache/g_anonfiles-link2file -cmin +10 -delete
+ if grep -q "$g_anonfileslink" ~/.cache/g_anonfiles-link2file >/dev/null 2>&1
+ then
+  g_anonfilesfile=$(grep "$g_anonfileslink" ~/.cache/g_anonfiles-link2file | tail -n1 | cut -d'|' -f2)
+ else
+  g_anonfilesfile=$(wget -nv --timeout=10 --random-wait --tries=10 -q --proxy localhost:8118 --user-agent="Mozilla/5.0 (compatible; MSIE 6.0; Windows NT 5.1; SV1)" --referer=https://anonfiles.com/ ${g_anonfileslink} -O - | egrep "href.+anonfiles.+rar" | cut -d '"' -f 2)
+  if [ -z $g_anonfilesfile ]
+  then
+   g_echo_error "Fehler beim ermitteln der Anonfiles Datei URL von $g_anonfileslink"
+   return 1
+  fi
+  echo "$g_anonfileslink|$g_anonfilesfile" >>~/.cache/g_anonfiles-link2file
+ fi
+ # Download
+ g_anonfilesname=$(echo "$g_anonfilesfile" | sed 's/.*\///')
+ ps ax | grep -v grep | grep -q "$g_anonfilesname" && return 1
+ g_echo_ok "Beginne Download von $g_anonfilesfile aus Link $g_anonfileslink - Ausgaben: $g_wgetout"
+ echo "wget --progress=bar:force:noscroll --timeout=10 --random-wait --tries=1 -c --proxy localhost:8118 --user-agent=\"Mozilla/5.0 (compatible; MSIE 6.0; Windows NT 5.1; SV1)\" --referer=https://anonfiles.com/ \"$g_anonfilesfile\""
+ if wget --progress=bar:force:noscroll --timeout=10 --random-wait --tries=1 -c --proxy localhost:8118 --user-agent="Mozilla/5.0 (compatible; MSIE 6.0; Windows NT 5.1; SV1)" --referer=https://anonfiles.com/ "$g_anonfilesfile" > "$g_wgetout" 2>&1
+ then
+  g_echo_ok "Download von $g_anonfilesfile abgeschlossen"
+  sed -i s,$g_anonfileslink,, *"$dlc.lst"
+  rm "$g_wgetout"
+  return 0
+ else
+  if grep -q "The file is already fully retrieved" "$g_wgetout"
+  then
+   g_echo_ok "Download von $g_anonfilesfile abgeschlossen"
+   sed -i s,$g_anonfileslink,, *"$dlc.lst"
+   rm "$g_wgetout"
+   return 0
+  else
+   g_echo_warn "Fehler $? beim Download von $g_anonfilesfile"
+   g_echo_warn "WGET:" $(cat "$g_wgetout")
+   rm  -f ~/.cache/g_anonfiles-link2file
+   return 1
+  fi
+ fi
+}
+

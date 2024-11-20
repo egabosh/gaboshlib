@@ -1,0 +1,30 @@
+#!/bin/bash
+
+function g_gentooupdate {
+ g_lockfile
+ g_nice
+ g_echo_warn "Starting Gentoo Update on `hostname`"
+ g_all-to-syslog
+ g_checkbasicmounts
+ mount | grep -q /usr/portage/distfiles || mount -t tmpfs -o size=10G tmpfs /usr/portage/distfiles
+ emerge -uqDvN --with-bdeps=y --ignore-built-slot-operator-deps y --keep-going @world
+ emerge -uqDnN --with-bdeps=y @world
+ emerge @preserved-rebuild -1qv --keep-going
+ emerge --depclean
+ rm -f /var/cache/revdep-rebuild/*.rr
+ revdep-rebuild -i -C -- -1qv --keep-going
+ #perl-cleaner --all -- -1qv --keep-going | grep -v " : /usr/lib/perl" | grep -v " -> " | grep -i -v "^Skipping directory" | grep -i "Updating)"
+ cat <<EOF > ${g_tmp}/ignore
+!!! /etc
+does not exist
+has wrong mtime
+/usr/share/applications/thunderbird.desktop
+/usr/share/applications/firefox.desktop
+/var/spool/at/atjobs/.SEQ
+EOF
+ equery -N -C check -o '*' 2>&1 |  grep '^!!!' | egrep -vi -f ${g_tmp}/ignore
+ rm -r /var/tmp/portage/*
+ touch /etc/netgroup
+ touch /var/db/services.db
+}
+

@@ -1,0 +1,192 @@
+#!/bin/bash
+
+function g_backup {
+
+  #### Config defaults
+  # dir(s) to backup (: separated)
+  local BACKUPDIRS=""
+  # Excludefile für rsync
+  local BACKUPEXCLUDES=""
+  # Backup-Server (Backup-Destination)
+  local BACKUPSRV=""
+  # SSH Port
+  local BACKUPSRVPORT="22"
+  # SSH User
+  local BACKUPSRVUSER=""
+  # Destination path on Backup-Server
+  local BACKUPSRVPATH=""
+  # run optional command on server and start backup only on success
+  local BACKUPSRVTESTCMD=""
+  # Copy only without hostname/backup-date Structure
+  local NODIRSTRUCT=""
+
+  g_tries=5
+  g_tries_delay=120
+
+  # Config files for custom vars
+  [ -r /usr/local/etc/g_backup.conf ] && . /usr/local/etc/g_backup.conf
+  [ -r ~/.config/g_backup.conf ] && . ~/.config/g_backup.conf
+
+  # Use CMD-line args
+  [ -n "$1" ] && BACKUPDIRS=$1
+  [ -n "$2" ] && BACKUPSRVPATH=$2
+  [ -n "$3" ] && BACKUPEXCLUDES=$3
+  [ -n "$4" ] && BACKUPSRV=$4
+  [ -n "$5" ] && BACKUPSRVPORT=$5
+  [ -n "$6" ] && BACKUPSRVUSER=$6
+  [ -n "$7" ] && BACKUPSRVTESTCMD=$7
+  [ -n "$8" ] && NODIRSTRUCT=$8
+
+  local usage="
+  $0 BACKUPDIR1[:BACKUPDIR2:BACKUPDIR3] BACKUPPATH [BACKUPEXCLUDES BACKUPSRV BACKUPSRVPORT BACKUPSRVUSER BACKUPSRVTESTCMD NODIRSTRUCT]"
+
+  [ -z "$BACKUPDIRS" ] && g_echo_error "No Directory to Backup (BACKUPDIR) given $usage" && return 1
+  [ -z "$BACKUPSRVPATH" ] && g_echo_error "No path to put the Backup (BACKUPPATH) given $usage" && return 1
+
+  if [ "$BACKUPEXCLUDES" == "default" ]
+  then
+    BACKUPEXCLUDES="$g_tmp/default-excludes"
+    echo '.local/share/gvfs-metadata
+.local/share/Trash
+.unison*
+unison.log
+.unison.sh.log
+.local/share/Steam/
+dwhelper
+*cache*
+*tmp*
+*temp*
+*.log
+*.log.*
+*.del
+*.bak
+*.old
+*.backup
+*.backups
+*Backup/
+*Backups/
+*.Backup
+*.Backups
+.var/app/org.signal.Signal
+vpn
+.config/Nextcloud/
+nextcloud-test.*/
+.VirtualBox/
+VirtualBox/
+DMS/
+tmp
+.zoom/
+.steam/
+pagefile.sys
+.config/Signal/
+.var/app/com.microsoft.Teams
+.var/app/im.riot.Riot
+GTC/
+Eingang/
+_neu/
+_neu_pre/
+.xsession-errors*
+part.dd
+.local/share/Steam
+/Nextcloud/
+var-lib-docker
+/proc/
+/sys/
+/dev/
+/run/
+/mnt/' >$g_tmp/default-excludes
+  fi
+
+  if [ -n "$BACKUPSRV" ] 
+  then
+    [ -z "$BACKUPSRVPORT" ] && g_echo_error "No SSH-Port given $usage" && return 1
+    local sshopts="g_retrycmd ssh -n -p $BACKUPSRVPORT -o BatchMode=yes -o StrictHostKeyChecking=accept-new  $BACKUPSRVUSER@$BACKUPSRV"
+    local sshoptsnoretry="ssh -n -p $BACKUPSRVPORT -o BatchMode=yes -o StrictHostKeyChecking=accept-new  $BACKUPSRVUSER@$BACKUPSRV"
+  fi
+
+  rsyncopts="-aXAH --no-inc-recursive --timeout=180 --force -yy --one-file-system --open-noatime --delete-after --ignore-missing-args --partial"
+  [ -n "$BACKUPEXCLUDES" ] && rsyncopts="$rsyncopts --delete-excluded --exclude-from=$BACKUPEXCLUDES"
+  [ -n "$BACKUPSRV" ] && rsyncopts="$rsyncopts -e 'ssh -p $BACKUPSRVPORT'"
+  [ "$BACKUPSRVUSER" == "root" ] && syncopts="$rsyncopts --numeric-ids"
+
+  local ORIGIFS="$IFS"
+  IFS=':'
+  # Prepare Dest-Dir on Backup-Server
+  local CMDS="mkdir -p ${BACKUPSRVPATH}/$(hostname):chmod 700 ${BACKUPSRVPATH}/$(hostname)"
+  [ -n "$NODIRSTRUCT" ] && CMDS="mkdir -p ${BACKUPSRVPATH}"
+  [ -n "$BACKUPSRVTESTCMD" ] && CMDS="$BACKUPSRVTESTCMD:$CMDS"
+  for CMD in $CMDS
+  do
+    IFS="$ORIGIFS"
+    g_runcmd $sshopts $CMD || return $?
+  done
+
+  IFS=':'
+  for BACKUPDIR in $BACKUPDIRS
+  do
+    IFS="$ORIGIFS"
+    rsyncoptsrun="$rsyncopts"
+
+    # prepare paths
+    if [ -z "$NODIRSTRUCT" ]
+    then
+      # build structure
+      BACKUPSRVPATH_WITH_HOST="$BACKUPSRVPATH/$(hostname)"
+      BACKUPSRVPATH_WITH_DATE="$BACKUPSRVPATH_WITH_HOST/backup-$(date +%Y-%m-%d)/$BACKUPDIR"
+      BACKUPSRVPATH_WITH_DATE_INCOMPLETE="$BACKUPSRVPATH_WITH_DATE-incomplete"
+
+      # linkdest/hardlink if present
+      BACKUPSRVPATH_LINK_DEST="$($sshoptsnoretry ls -d1 "$BACKUPSRVPATH_WITH_HOST/backup-*/$BACKUPDIR" 2>/dev/null | egrep -v "/backup.+-monthly/" | sort | tail -n1 | perl -pe 's/$/\//' )"
+      BACKUPSRVPATH_LINK_DEST_INCOMPLETE="$($sshoptsnoretry ls -d1 "$BACKUPSRVPATH_WITH_HOST/backup-*/$BACKUPDIR-incomplete" 2>/dev/null | grep -v $BACKUPSRVPATH_WITH_HOST/backup-$(date +%Y-%m-%d) | tail -n 19 | sort | perl -pe 's/^/--link-dest=/; s/\n/\/ /g')"
+      [ -n "$BACKUPSRVPATH_LINK_DEST_INCOMPLETE" ] && rsyncoptsrun="$rsyncoptsrun $BACKUPSRVPATH_LINK_DEST_INCOMPLETE"
+      #[ -n "$BACKUPSRVPATH_LINK_DEST" ] && rsyncoptsrun="$rsyncoptsrun --link-dest=$BACKUPSRVPATH_LINK_DEST"
+
+      g_runcmd $sshopts mkdir -p "$BACKUPSRVPATH_WITH_DATE_INCOMPLETE" || continue
+
+      # Create hardlinks before rsync because of some strange behaviour with "rsync --link-dest="
+      [ -n "$BACKUPSRVPATH_LINK_DEST" ] && g_runcmd $sshopts cp -rlfTP "$BACKUPSRVPATH_LINK_DEST"/ "$BACKUPSRVPATH_WITH_DATE_INCOMPLETE"/
+
+    else
+      BACKUPSRVPATH_WITH_DATE_INCOMPLETE="$BACKUPSRVPATH"
+    fi
+    
+    # Backup
+    [ -n "$BACKUPSRV" ] && sshrsync="$BACKUPSRVUSER@$BACKUPSRV:"
+    g_runcmd g_retrycmd rsync $rsyncoptsrun "$BACKUPDIR"/ "${sshrsync}$BACKUPSRVPATH_WITH_DATE_INCOMPLETE"/ || continue
+
+    # done if no direstructure
+    [ -n "$NODIRSTRUCT" ] && continue
+    
+    # if backups from this day already exists move it to $BACKUPSRVPATH_WITH_DATE-$$-old
+    if $sshopts test -e "$BACKUPSRVPATH_WITH_DATE"
+    then
+      $sshopts mv "$BACKUPSRVPATH_WITH_DATE" "$BACKUPSRVPATH_WITH_DATE-$$-old"
+    fi
+
+    # move from -incomplete to default dir
+    g_runcmd $sshopts mv "$BACKUPSRVPATH_WITH_DATE_INCOMPLETE" "$BACKUPSRVPATH_WITH_DATE" || continue
+ 
+    local yearmonth="$(date +%Y-%m-)"
+
+    # Create monthly dir if not exists
+    BACKUPSRVPATH_MONTHLY="$BACKUPSRVPATH_WITH_HOST/backup-${yearmonth}monthly/$BACKUPDIR"
+    if ! $sshopts test -e "$BACKUPSRVPATH_MONTHLY"
+    then 
+      g_echo "Creating monthly-Backup $BACKUPSRVPATH_MONTHLY"
+      g_runcmd $sshopts mkdir -p "$BACKUPSRVPATH_MONTHLY" || continue
+      g_runcmd $sshopts mv -T "$BACKUPSRVPATH_WITH_DATE" "$BACKUPSRVPATH_MONTHLY" || continue
+      g_runcmd $sshopts ln -s "$BACKUPSRVPATH_MONTHLY" "$BACKUPSRVPATH_WITH_DATE" || continue
+    fi
+
+    # Cleanup old backups
+    local yearmonthbefore="$(date +%Y-%m- --date='-1 month')"
+    $sshopts find $BACKUPSRVPATH_WITH_HOST -mindepth 1 -maxdepth 1 -type d -name "backup-*" | egrep -v "backup-$yearmonth|backup-$yearmonthbefore|backup-20[0-9][0-9]-[0-9][0-9]-monthly" | while read g_toremove 
+    do
+      g_echo_warn "Removing old Backup $g_toremove"
+      g_runcmd $sshopts chmod -R +w "$g_toremove"
+      g_runcmd $sshopts rm -r "$g_toremove"
+    done
+  done
+
+  return 0
+}

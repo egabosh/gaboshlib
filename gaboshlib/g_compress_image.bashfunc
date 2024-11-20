@@ -1,0 +1,22 @@
+#!/bin/bash
+
+function g_compress_image {
+ local g_img=$@
+ if exiftool "$g_img" | egrep -q "^Comment.+processed by g_compress_image"
+ then
+  g_echo "Bild $g_img bereits bearbeitet"
+ else
+  g_echo "Bearbeite Bild $g_img"
+  if convert -quality 85% -resize 1920\>x1920\> -normalize -set comment "processed by g_compress_image" "$g_img" "$g_tmp"/imgdone.jpg
+  then
+   local g_timestamp=$(ls --time-style='+%Y%m%d%H%M' -l "$g_img" | cut -d" " -f6)
+   # For update-copy or rsync one second newer file
+   #g_timestamp=$((g_timestamp+1))
+   cat "$g_tmp"/imgdone.jpg >"$g_img"
+   touch -t $g_timestamp "$g_img"
+  else
+   g_echo_warn "Bearbeitung von $g_img fehlgeschlagen"
+  fi
+ fi
+}
+

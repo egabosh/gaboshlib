@@ -1,0 +1,17 @@
+#!/bin/bash
+
+function g_imagesorttonextclouddir {
+ if ! [ -d ~/"Nextcloud/Fotos" ]
+ then
+  g_echo_error "Verzeichnis ~/Nextcloud/Fotos existiert nicht"
+  return 1
+ fi
+ find .  -name "*_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_[0-9][0-9][0-9][0-9][0-9][0-9].*" | while read g_image
+ do 
+  local g_bfile=$(basename "$g_image") 
+  local g_dir=$(echo "$g_bfile" | perl -pe 's/^....(....)(..).+$/$1\/$2/')
+  mkdir -p ~/"Nextcloud/Fotos/$g_dir"
+  mv -n "$g_image" ~/"Nextcloud/Fotos/$g_dir/"
+ done 
+}
+

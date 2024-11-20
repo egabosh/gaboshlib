@@ -1,0 +1,20 @@
+#!/bin/bash
+
+function g_cryptdevice-chpass {
+ local g_dev=$1
+ if [ -z $g_dev ]
+ then
+  g_select=$(lsblk -o NAME,FSTYPE,VENDOR,MODEL,SIZE,MOUNTPOINT -l | grep crypto_LUKS | perl -pe 's/ +/ /g' | while read g_line
+ do
+  g_dev=$(echo $g_line | cut -d" " -f1)
+  g_descr="$(echo $g_line | cut -d" " -f3,4,5,6,7,8 | perl -pe 's/ /\-/g')"
+  echo -n "/dev/$g_dev $g_descr "
+ done)
+  g_dev=$(zenity --width=500 --height=300 --list --title="Please select" --text="Please select the cryptdvice which password sould be changed" --column="Device" --column="Description" $g_select)
+ fi
+ [ -w "$g_dev" ] || g_echo_error_exit "Device $g_dev does not exist or is not writeable"
+ g_sudo="sudo"
+ whoami | egrep "^root$" && g_sudo=""
+ $g_sudo cryptsetup luksChangeKey $g_dev || g_echo_error_exit "Pass of $g_dev not changed"
+}
+

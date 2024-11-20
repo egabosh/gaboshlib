@@ -1,0 +1,10 @@
+#!/bin/bash
+
+function g_echo {
+ [ -z "$1" ] && return 0
+ echo -en "\033[97m$(g_date_print) "
+ cat <<< "$@"
+ echo -en "\033[0m"
+ [ -z $g_alltosyslog ] && return 0
+ g_logger $@
+}

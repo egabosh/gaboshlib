@@ -1,0 +1,15 @@
+#!/bin/bash
+
+function g_staleumount {
+  g_return=0
+  grep -v tracefs /proc/mounts | grep -v /run/ | cut -d' ' -f2 | while read g_mount
+  do
+    if ! timeout --signal=KILL 120 ls -d "$g_mount" >/dev/null
+    then
+      g_echo_error "Unmounting stale/hanging $g_mount with -lf"
+      umount -lf "$g_mount"
+      return=1
+    fi
+  done
+  return $g_return
+}

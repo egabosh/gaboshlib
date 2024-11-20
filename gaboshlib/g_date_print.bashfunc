@@ -1,0 +1,6 @@
+#!/bin/bash
+
+function g_date_print {
+ g_date
+ echo $g_date
+}

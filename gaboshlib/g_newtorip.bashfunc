@@ -1,0 +1,13 @@
+#!/bin/bash
+
+function g_newtorip {
+ g_echo "Hole per Tor ne neue IP"
+ g_iptor
+ g_echo "Aktuelle Tor IP $g_iptor"
+ (echo authenticate '""'; echo signal newnym; echo quit) | nc localhost 9051 || g_echo_error "failed connection to tor service"
+ g_echo "Warte 10 Sekunden"
+ sleep 10
+ g_iptor
+ g_echo "Neue IP $g_iptor"
+}
+

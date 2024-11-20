@@ -1,0 +1,33 @@
+#!/bin/bash
+
+function g_similar {
+ echo '#!/usr/bin/perl -w
+
+use strict;
+use String::Approx "amatch";
+
+my @strings=<STDIN>;
+my @cstrings=@strings;
+
+foreach my $string (@strings) {
+ chomp($string);
+ my $string_len = length($string);
+ next if ($string_len <= 5);
+ foreach my $cstring (@cstrings) {
+  chomp($cstring);
+  my $comparestring=$cstring;
+  $comparestring=substr($comparestring,0,$string_len);
+  my @match = amatch($string, [ "i", "10%" ], $comparestring);
+  foreach my $match (@match) {
+   next if ($match eq $string);
+   my $cstring_len = length($cstring);
+   $string_len=~+2;
+   next if ($cstring_len >= $string_len);
+   print "\"$string\" = \"$cstring\"?\n";
+  }
+ }
+}
+' >${g_tmp}/similar.pl
+ perl -w ${g_tmp}/similar.pl
+}
+

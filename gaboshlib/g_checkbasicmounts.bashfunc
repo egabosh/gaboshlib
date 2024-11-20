@@ -1,0 +1,10 @@
+#!/bin/bash
+
+function g_checkbasicmounts {
+ rm -f /usr/portage/distfiles/.mirror-cache.json
+ mount | grep -q /proc || mount -t proc proc /proc
+ mount | grep -q /sys || mount -t sysfs sys /sys
+ mount | grep -q /dev/shm || mount -t tmpfs -o size=20G shm /dev/shm
+ mount | grep -q /dev/pts || mount -t devpts -o gid=5 devpts /dev/pts
+ chmod 666 /dev/urandom
+}

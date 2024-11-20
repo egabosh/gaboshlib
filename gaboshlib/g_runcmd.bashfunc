@@ -1,0 +1,15 @@
+#!/bin/bash
+
+function g_runcmd {
+  set -o pipefail
+  #>&2 echo "running $@"
+  $@ 2>&1 | tee $g_tmp/g_runcmd-output
+  g_runcmd_exitcode=$?
+
+  if ! [ $g_runcmd_exitcode -eq 0 ]
+  then
+    g_echo_error "${FUNCNAME} $@
+$(cat $g_tmp/g_runcmd-output)"
+  fi
+  return $g_runcmd_exitcode
+}

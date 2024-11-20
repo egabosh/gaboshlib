@@ -1,0 +1,14 @@
+#!/bin/bash
+
+function g_select-path {
+ if [ -z $DISPLAY ]
+ then
+  read -p "$@: " g_path
+ else
+  g_path=$(zenity --title "$@" --file-selection --directory)
+ fi
+ [ -z "$g_path" ] && g_echo_error_exit "Weder Pfad noch eine Datei angegeben"
+ [ -d "$g_path" ] || [ -e "$g_path" ] || g_echo_error_exit "$@ ist weder ein Pfad noch eine Datei"
+ echo "$g_path"
+}
+

@@ -1,0 +1,11 @@
+#!/bin/bash
+
+function g_test_mediafile {
+ local g_mediafile=$@
+ ffprobe "$g_mediafile" >"$g_tmp"/audinfo 2>&1
+ if egrep -q "Invalid data found when processing input|No such file or directory|Invalid argument|moov atom not found" "$g_tmp"/audinfo
+ then
+  g_echo_warn "Video $g_aud existiert nicht (mehr) oder ist defekt."
+  return 1
+ fi
+}

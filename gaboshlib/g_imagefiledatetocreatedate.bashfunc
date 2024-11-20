@@ -1,0 +1,18 @@
+#!/bin/bash
+
+function g_imagefiledatetocreatedate {
+ find . -type f | sort | while read g_image
+ do
+  exiftool "$g_image" >"$g_tmp/exiftool"
+  if egrep -q "^Create Date" "$g_tmp/exiftool"
+  then
+   local g_dir=$(dirname "$g_image")
+   local g_date="$(egrep "^Create Date" "$g_tmp/exiftool" | head -n1 | perl -pe 's/^Create Date.+: //; s/://g; s/ //g; s/^(............).+$/$1/')"
+   g_echo "$g_image"
+   touch -t "$g_date" "$g_image"
+  else
+   g_echo_warn "$g_image hat kein Create Date in den Metadaten"
+  fi
+ done
+}
+

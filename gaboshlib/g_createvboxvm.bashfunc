@@ -1,0 +1,28 @@
+#!/bin/bash
+
+function g_createvboxvm {
+ set -x
+ local g_vboxvm=$1
+ local g_vboxvmtype=$2
+ local g_vboxvmmem=$3
+ [ -z "$g_vboxvm" ] && g_echo_error_exit "No VM Name specified"
+ # Defaults if not specified
+ g_vboxvmtype=${2:-Linux_64}
+ g_vboxvmmem=${3:-1024}
+ # Create VM
+ echo "$g_vboxvm"
+ VBoxManage createvm --name "$g_vboxvm" --register --basefolder "${g_vboxvm}" --ostype "$g_vboxvmtype"
+ # Set memory and network
+ VBoxManage modifyvm "$g_vboxvm" --ioapic on
+ VBoxManage modifyvm "$g_vboxvm" --memory "$g_vboxvmmem" --vram 128
+ VBoxManage modifyvm "$g_vboxvm" --nic1 nat
+ VBoxManage modifyvm "$g_vboxvm" --natdnsproxy1 on
+ # Create Disk and connect
+ [ -e "${g_vboxvm}/${g_vboxvm}_DISK.vdi" ] || VBoxManage createhd --filename "${g_vboxvm}/${g_vboxvm}_DISK.vdi" --size 80000 --format VDI
+ VBoxManage internalcommands sethduuid "${g_vboxvm}/${g_vboxvm}_DISK.vdi"
+ VBoxManage storagectl "$g_vboxvm" --name "SATA Controller" --add sata --controller IntelAhci
+ VBoxManage storageattach "$g_vboxvm" --storagectl "SATA Controller" --port 0 --device 0 --type hdd --medium  "$g_vboxvm/${g_vboxvm}_DISK.vdi"
+ # Boot
+ VBoxManage modifyvm "$g_vboxvm" --boot1 disk --boot2 net --boot3 none --boot4 none
+}
+

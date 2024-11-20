@@ -1,0 +1,27 @@
+#!/bin/bash
+
+function g_imagesetcreatetimedynminsec {
+ local g_cdate=$@
+ if ! echo "$g_cdate" | perl -pe 's/([0-9][0-9][0-9][0-9])([0-9][0-9])([0-9][0-9]) /$1:$2:$3 /' | egrep -q '^[0-9][0-9][0-9][0-9]:[0-9][0-9]:[0-9][0-9] [0-9][0-9]$'
+ then
+  g_echo_error "CreateDate invalid : \"YYYY:MM:DD hh\""
+  return 1
+ fi
+ local g_s=10
+ local g_m=10
+ ls | egrep -v 'IMG_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_[0-9][0-9][0-9][0-9][0-9][0-9].jpg$' | while read g_image
+ do 
+  if [ $g_s -eq 59 ]
+  then 
+   ((g_m++))
+   g_s=10
+  fi
+  local g_timestamp=$(ls --time-style='+%Y%m%d%H%M' -l "$g_image" | cut -d" " -f6)
+  # For update-copy or rsync one second newer file
+  #g_timestamp=$((g_timestamp+1))
+  exiftool -overwrite_original -CreateDate="$g_cdate:$g_m:$g_s" "$g_image"
+  touch -t $g_timestamp "$g_image"
+  ((g_s++))
+ done
+}
+

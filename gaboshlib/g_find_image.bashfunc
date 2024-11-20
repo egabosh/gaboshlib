@@ -1,0 +1,13 @@
+#!/bin/bash
+
+function g_find_image {
+ IFS=$'\n'  # for space escapes in path
+ find $@ -type f | sort | while read g_file
+ do
+  mediainfo --File_TestContinuousFileNames=0 "$g_file" > "$g_tmp/g_mediainfo" 2>&1
+  cat "$g_tmp/g_mediainfo" | egrep -q "^Video$" && continue
+  cat "$g_tmp/g_mediainfo" | egrep -q "^Audio$" && continue
+  cat "$g_tmp/g_mediainfo" | egrep -q "^Image$" && echo "$g_file"
+ done
+}
+

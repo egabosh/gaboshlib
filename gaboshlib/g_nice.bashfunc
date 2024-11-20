@@ -1,0 +1,6 @@
+#!/bin/bash
+
+function g_nice {
+ which renice 2>&1 >/dev/null && renice -n 19 -p $$ >/dev/null
+ which ionice 2>&1 >/dev/null && ionice -c 3 -p $$
+}

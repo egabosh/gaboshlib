@@ -1,0 +1,23 @@
+#!/bin/bash
+
+function g_videorenamecamdateformat {
+ local g_cdate=$@
+ if ! echo "$g_cdate" | egrep -q '^[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_[0-9][0-9]$'
+ then
+  g_echo_error "CreateDate invalid : \"YYYYMMDD_HH\""
+  return 1
+ fi
+ local g_s=10
+ local g_m=10
+ ls | while read g_vid
+ do
+  if [ $g_s -eq 59 ]
+  then
+   ((g_m++))
+   g_s=10
+  fi
+  mv -n "$g_vid" "VID_${g_cdate}$g_m$g_s.mp4"
+  ((g_s++))
+ done
+}
+
