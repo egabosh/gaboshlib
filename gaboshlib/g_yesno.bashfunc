@@ -1,0 +1,13 @@
+#!/bin/bash
+
+function g_yesno {
+ if [ -z $DISPLAY ]
+ then
+  read -p "$@ y/n" -n 1 -r g_yesno
+  echo
+  [[ ! $g_yesno =~ ^[Yy]$ ]] && g_echo_error_exit "Exited because answer was no!"
+ else
+  zenity --question --text="$@" --default-cancel --no-wrap || g_echo_error_exit "Exited because answer was no!"
+ fi
+}
+

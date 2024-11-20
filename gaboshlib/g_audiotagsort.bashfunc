@@ -1,0 +1,238 @@
+#!/bin/bash
+
+function g_audiotagsort {
+ local g_artist_dirname="artist"
+ local g_artist_albums_only_dirname="artist-albums_only"
+ local g_uploaddate_dirname="uploaddate"
+ local g_genre_dirname="genre"
+ local g_sampler_dirname="sampler"
+ local g_year_dirname="year"
+ local g_album_dirname="album"
+ local g_uploaddate=$(date "+%Y_%m_%d")
+ if [ -d "$1" ]
+ then
+  g_audiosourcepath="$1"
+#  g_echo "Audiosource $g_audiosourcepath"
+ else
+  g_echo_error echo "No Audiosource defined"
+  return 1
+ fi
+ mkdir -p "$2" >/dev/null 2>&1
+ if [ -d "$2" ]
+ then
+  g_sortpath="$2"
+ else
+  echo "No sortpath defined"
+  return 1
+ fi
+ [ -n "$3" ] && g_artist_dirname="$3"
+ [ -n "$4" ] && g_artist_albums_only_dirname="$4"
+ [ -n "$5" ] && g_uploaddate_dirname="$5"
+ [ -n "$6" ] && g_genre_dirname="$6"
+ [ -n "$7" ] && g_sampler_dirname="$7"
+ [ -n "$8" ] && g_year_dirname="$8"
+
+ find "$g_audiosourcepath" -iname "*.m4a" -type f | sort | while read g_aud
+ do
+  g_echo "Bearbeite $g_aud"
+  g_test_mediafile "$g_aud" || return 1
+  ### Get an clean Tags
+  cat "$g_tmp"/audinfo | perl -pe '
+# Substitute multiple spaces with one
+s/ +/ /g;
+# Remove space in line beginning
+s/^ /g_/;
+
+# Unwanted strings in filenames
+s/\(/\[/g;
+s/\{/\[/g;
+s/\</\[/g;
+s/\)/\]/g;
+s/\}/\]/g;
+s/\>/\]/g;
+s/^ +//;
+s/ +$//;
+s/^\./_/;
+s/[\"\`]/´/g;
+s/\\/_/g;
+s/\//_/g;
+s/\:/_/g;
+s/\*/_/g;
+s/\?/_/g;
+s/\|/_/g;
+s/\$/_/g;
+s/\#/_/g;
+s/\~/_/g;
+s/\&/_/g;
+s/^-/_/; 
+s/\.+$//;
+s/^\.+//;
+s/_+/_/g;
+
+# Substitute first " _ " with "=" for variable setting
+s/ _ /=\"/;
+# " in the end
+s/(.+)$/$1\"/;
+
+# Remove Vars with only one or more _
+s/=\"_+\"//;
+' | egrep -a "^g_title=|g_artist=|g_album=|g_date=|g_genre=|g_track=" | perl -pe "s/'/´/g" >$g_tmp/tags
+  if ! file -b $g_tmp/tags 2>&1 | egrep -q "^UTF-8 Unicode text|Unicode text|UTF-8 text|^ASCII text"
+  then
+   file -b $g_tmp/tags
+   g_echo_error "$g_aud Tags scheinen nicht Unicode (UTF-8) zu sein!"
+   continue
+  fi
+  . $g_tmp/tags
+  ### Check Tags
+  if [ -z "$g_title" ]
+  then
+   g_echo_error "$g_aud Titel Tag nicht gesetzt"
+   continue
+  fi
+  if [ -z "${g_artist}" ]
+  then
+   g_echo_error "$g_aud Artist Tag nicht gesetzt"
+   continue
+  else
+   # Move articles behind
+   g_artist=$(echo "${g_artist}" | perl -pe "
+    chomp;
+    if (/^Die /) { s/^Die //; \$_=\$_ . ', Die' } 
+    if (/^Der /) { s/^Der //; \$_=\$_ . ', Der' } 
+    if (/^Das /) { s/^Das //; \$_=\$_ . ', Das' }
+    if (/^The /) { s/^The //; \$_=\$_ . ', The' }")
+  fi
+  if [ -z "$g_album" ]
+  then
+   g_echo_error "$g_aud Album Tag nicht gesetzt"
+   continue
+  fi
+  # Remove all non numerical
+  g_date=$(echo "$g_date" | perl -pe 's/[^0-9]//g;')
+  if ! echo "$g_date" | egrep -q "^[12][90][0-9][0-9]$"
+  then
+   g_echo_error "$g_aud Year Tag nicht gesetzt oder ungültig"
+   continue
+  fi
+  if [ -z "$g_genre" ]
+  then
+   g_echo_error "$g_aud Genre Tag nicht gesetzt"
+   continue
+  fi
+  # Remove all non numerical
+  g_track=$(echo "$g_track" | perl -pe 's/_.+$//; s/[^0-9]//g;')
+  if [ -z "$g_track" ]
+  then
+   g_echo_error "$g_aud Tracknum Tag nicht gesetzt"
+   continue
+  fi
+  g_track=$(printf '%02d' $g_track)
+  if ! echo "$g_track" | egrep -q "^[0-9][0-9]$"
+  then
+   g_echo_error "$g_aud Tracknum Tag $g_track ungültig"
+   continue
+  fi
+  
+  ### Sort audio file
+  # filename
+  g_audiofilename="${g_track} -- ${g_artist} -- ${g_title}.m4a"
+  g_alphabeticorderartist=$(echo "${g_artist}" | perl -pe 's/^(.).+$/$1/; chomp; ; $_=uc $_; s/[^[:alnum:]]/_/')
+
+  g_uploaddate_path="${g_sortpath}/${g_uploaddate_dirname}/${g_uploaddate}/${g_artist} -- ${g_album}"
+  g_album_path="${g_sortpath}/${g_album_dirname}/${g_album}/${g_artist}"
+  g_artist_path="${g_sortpath}/${g_artist_dirname}/${g_alphabeticorderartist}/${g_artist}/${g_album}"
+  g_artist_sampler_path="${g_sortpath}/${g_artist_dirname}/${g_alphabeticorderartist}/${g_artist}/SAMPLER -- ${g_album}"
+  g_genre_path="${g_sortpath}/${g_genre_dirname}/${g_genre}/${g_artist}/${g_album}"
+  g_year_path="${g_sortpath}/${g_year_dirname}/$g_date/${g_artist}/${g_album}"
+
+  ### Check for already uploaded
+  if [ -f "${g_artist_path}/${g_audiofilename}" ] || [ -f "${g_artist_sampler_path}/${g_audiofilename}" ]
+  then
+   g_echo_warn "Album/Sampler ${g_album}/${g_audiofilename} bereits in Sammlung!"
+   continue
+  fi
+  
+  # Cover?
+  g_cover="$(dirname "${g_aud}")"/cover.jpg
+  
+  # Uploaddate
+  mkdir -p "${g_uploaddate_path}"
+  g_echo "=== 1. Linke nach \"${g_uploaddate_path}/${g_audiofilename}\""
+  ln "${g_aud}" "${g_uploaddate_path}/${g_audiofilename}" || continue
+  [ -f "${g_cover}" ] && ln -f "${g_cover}" "${g_uploaddate_path}/cover.jpg"
+
+  # Album
+  mkdir -p "${g_album_path}"
+  ln "${g_aud}" "${g_album_path}/${g_audiofilename}" || continue
+  [ -f "${g_cover}" ] && ln -f "${g_cover}" "${g_album_path}/cover.jpg"
+  
+  # Artist
+  mkdir -p "${g_artist_path}"
+  g_echo "=== 2. Linke nach \"${g_artist_path}/${g_audiofilename}\""
+  ln "${g_aud}" "${g_artist_path}/${g_audiofilename}" || continue
+  [ -f "${g_cover}" ] && ln -f "${g_cover}" "${g_artist_path}/cover.jpg"
+
+  # Genre
+  mkdir -p "${g_genre_path}"
+  g_echo "=== 3. Linke nach \"${g_genre_path}/${g_audiofilename}\""
+  ln "${g_aud}" "${g_genre_path}/${g_audiofilename}" || continue
+  [ -f "${g_cover}" ] && ln -f "${g_cover}" "${g_genre_path}/cover.jpg"
+
+  # Year
+  mkdir -p "${g_year_path}"
+  g_echo "=== 4. Linke nach \"${g_year_path}/${g_audiofilename}\""
+  ln "${g_aud}" "${g_year_path}/${g_audiofilename}" || continue
+  [ -f "${g_cover}" ] && ln -f "${g_cover}" "${g_year_path}/cover.jpg"
+ 
+  # Remove original after linking
+  g_echo "Lösche Original ${g_aud}"
+  rm "${g_aud}"
+ done
+ # find, rename and move sampler
+ if [ -d "${g_sortpath}/${g_album_dirname}" ] 
+ then
+  ls -1 "${g_sortpath}/${g_album_dirname}" | egrep -iav "^Live$|^Demo$|^Best of$|^The Best of$"| while read g_albumartist
+  do
+   if [ $(ls -1 "${g_sortpath}/${g_album_dirname}/${g_albumartist}" | wc -l) -ge 4 ]
+   then
+    mkdir -p "${g_sortpath}/${g_sampler_dirname}"
+    cp -rl "${g_sortpath}/${g_album_dirname}/${g_albumartist}" "${g_sortpath}/${g_sampler_dirname}/"
+    [ -f "${g_cover}" ] && ln -f "${g_cover}" "${g_sortpath}/${g_sampler_dirname}/cover.jpg"
+    find "${g_sortpath}/${g_sampler_dirname}" -type f ! -links 5 | sort | while read sampleraudio
+    do
+     g_echo "=== 5. Linke Sampler \"$sampleraudio\""
+     samplerfileinode=$(ls -i "$sampleraudio" | cut -d" " -f1)
+     find "${g_sortpath}/${g_uploaddate_dirname}" "${g_sortpath}/${g_artist_dirname}" "${g_sortpath}/${g_genre_dirname}" "${g_sortpath}/${g_year_dirname}" -inum ${samplerfileinode} | egrep -v "\/SAMPLER -- "| sort | while read renamesamplerfile
+     do
+      samplerdir="$(dirname "$renamesamplerfile")"
+      newsamplerdir=$(dirname "$renamesamplerfile" | perl -pe '$_=reverse $_; s/\// -- RELPMAS\//; $_=reverse $_')
+      # Sampler bei Uploaddatum, Erscheinungsjahr und Genre nicht in Interpretenunterverzeichnisse
+      echo "$newsamplerdir" | grep -q "${g_sortpath}/${g_uploaddate_dirname}" && newsamplerdir=$(echo "$newsamplerdir" | perl -pe 's/(\/SAMPLER -- ).+ -- (.+$)/$1$2/')
+      echo "$newsamplerdir" | grep -q "${g_sortpath}/${g_year_dirname}" && newsamplerdir=$(echo "$newsamplerdir" | perl -pe 's/\/[^\/.]+\/SAMPLER -- /\/SAMPLER -- /')
+      echo "$newsamplerdir" | grep -q "${g_sortpath}/${g_genre_dirname}" && newsamplerdir=$(echo "$newsamplerdir" | perl -pe 's/\/[^\/.]+\/SAMPLER -- /\/SAMPLER -- /')
+      mkdir -p "$newsamplerdir"
+      mv "$samplerdir"/* "$newsamplerdir"/
+      find "$samplerdir/../.." -type d -empty -delete >/dev/null 2>&1
+     done
+    done
+   fi
+  done
+ fi
+ [ -d "${g_sortpath}/${g_album_dirname}" ] && rm -r "${g_sortpath}/${g_album_dirname}"
+ # Create Artist-Albums-only (without Sampler)
+ mkdir -p "${g_sortpath}/$g_artist_albums_only_dirname"
+ find "${g_sortpath}/$g_artist_dirname" -type f ! -links 5 | grep -v "SAMPLER -- " | sort | while read g_artist_albums_only_file_source
+ do
+  g_artist_albums_only_file_dest=$(echo "$g_artist_albums_only_file_source" | perl -pe "s/\/$g_artist_dirname\//\/$g_artist_albums_only_dirname\//")
+  mkdir -p "$(dirname "$g_artist_albums_only_file_dest")"
+  g_echo "=== 5. Linke Album \"$g_artist_albums_only_file_dest\""
+  g_cover="$(dirname "$g_artist_albums_only_file_source")/cover.jpg"
+  ln "$g_artist_albums_only_file_source" "$g_artist_albums_only_file_dest"
+  [ -f "${g_cover}" ] && ln -f "${g_cover}" "$(dirname "$g_artist_albums_only_file_dest")/cover.jpg"
+ done
+ # Cleanup
+ [ -f "${g_cover}" ] && rm "${g_cover}"
+ find "$g_audiosourcepath"/ -name cover.jpg -type f -delete
+ find "$g_audiosourcepath"/ -mindepth 1 -type d -empty -delete
+}

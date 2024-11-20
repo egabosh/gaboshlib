@@ -1,0 +1,18 @@
+#!/bin/bash
+
+function g_find_video {
+ IFS=$'\n'  # for space escapes in path
+ # lagest first
+ find $@ -type f ! -name "*.part" -printf '%k %p\n' | sort -rn | perl -pe 's/^[0-9]+ //' | while read g_file
+ do
+  mediainfo --File_TestContinuousFileNames=0 "$g_file" > "$g_tmp/g_mediainfo" 2>&1
+  if egrep -q "^Video$" "$g_tmp/g_mediainfo"
+  then
+   if egrep -q "^Audio$|^Audio #" "$g_tmp/g_mediainfo"
+   then
+    echo "$g_file" 
+   fi
+  fi
+ done
+}
+

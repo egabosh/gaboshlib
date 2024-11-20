@@ -1,0 +1,10 @@
+#!/bin/bash
+
+function g_echo_ok {
+ [ -z "$1" ] && return 0
+ echo -en "\033[97m$(g_date_print) \033[32m"
+ cat <<< "$@"
+ echo -en "\033[0m"
+ g_logger OK: $@
+ [ -z $DISPLAY ] || zenity --notification --text="$@"
+}

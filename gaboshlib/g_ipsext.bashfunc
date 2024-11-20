@@ -1,0 +1,10 @@
+#!/bin/bash
+
+function g_ipsext {
+ if ifconfig | grep -q ppp0
+ then
+  g_ipext=$(ifconfig ppp0 | awk '/inet/ { print $2 } ' | sed -e s/addr://)
+ else
+  g_ipext=$(curl -s --connect-timeout 3 --noproxy checkip.amazonaws.com http://checkip.amazonaws.com/)
+ fi
+}

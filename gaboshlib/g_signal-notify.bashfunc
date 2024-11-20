@@ -1,0 +1,17 @@
+#!/bin/bash
+
+function g_signal-notify {
+  [ -z "$1" ] && return 0
+  if ! [ -s /usr/local/bin/notify.sh ] 
+  then
+    g_echo_error "$0: /usr/local/bin/notify.sh empty or not existing"
+    return 1
+  fi
+  if ! [ -x /usr/local/bin/notify.sh ] 
+  then
+    g_echo_error "$0: /usr/local/bin/notify.sh not executable"
+    return 1
+  fi
+  [ -n "${SIGNAL_GROUP}" ] && g_signal_group="-g \"${SIGNAL_GROUP}\""
+  cat <<< "$(g_date_print) $@" | tail -n 100 | /usr/local/bin/notify.sh $g_signal_group
+}

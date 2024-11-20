@@ -1,0 +1,148 @@
+#!/bin/bash
+
+function g_compress_audio {
+ # Datei OK und noch da?
+ local g_aud=$1
+ local g_remotedockerffmpeg=$2
+
+ g_test_mediafile "$g_aud" || return 1
+ # File already converted
+ if egrep -q "HE-AAC.+64 kb" "$g_tmp"/audinfo
+ then
+  g_echo "Audio $g_aud bereits bearbeitet - Bearbeite nur Metadata/Tags"
+  g_audiosettings="-vn -c:a copy"
+ else
+  # Audio Mono/Stereo Codec?
+  if cat "$g_tmp"/audinfo | egrep -q "Stream.+mono"
+  then
+   g_echo "Bearbeite Mono Audiodatei $g_aud"
+   #g_audiosettings="-vn -af loudnorm=I=-16:LRA=11 -ar 44100 -c:a libfdk_aac -profile:a aac_he -b:a 32k"
+   g_audiosettings="-vn -ar 44100 -c:a libfdk_aac -profile:a aac_he -b:a 64k"
+  else
+   g_echo "Bearbeite Audiodatei $g_aud"
+   #g_audiosettings="-vn -af loudnorm=I=-16:LRA=11 -ar 44100 -ac 2 -c:a libfdk_aac -profile:a aac_he_v2 -b:a 32k"
+   g_audiosettings="-vn -ar 44100 -ac 2 -c:a libfdk_aac -profile:a aac_he_v2 -b:a 64k"
+  fi
+ fi
+ # Tags/Metadata
+ # Convert to UTF if ISO
+ file -b "$g_tmp"/audinfo | grep -q "ISO-8859 text" && iconv -f ISO-8859-15 -t UTF-8 "$g_tmp"/audinfo -o "$g_tmp"/audinfo
+ # Tag substitutions
+ cat <<EOF > ${g_tmp}/perlsubstitutions
+## Prepare ffmpeg output
+# Ignore Picture/Video/Cover metadata
+\$ign='1' if (/Stream .+ Video/);
+\$_='' if (\$ign);
+# Substitute multiple spaces with one
+s/ +/ /g;
+# Remove space in line beginning
+s/^ //;
+# Substitute " : " with "='" for variable setting
+s/ : /=/;
+s/^(title|album|artist|track|date|genre)= +/\$1=/;
+# Case insensitive Tags
+s/^title/title/i;
+s/^artist/artist/i;
+s/^date/date/i;
+s/^album/album/i;
+s/^genre/genre/i;
+s/^track/track/i;
+
+# Ignore everything but the 6 tags
+\$_='' unless (/^(title|album|artist|track|date|genre)=/);
+unless (/^\$/) {
+ ## Work on TAGs
+ # Remove unwanted stings
+ s/’/´/g; 
+ s/'/\´/g;
+ s/\`/\´/g;
+ s/ +$//; 
+ s/\'/\´/g;
+ # cyrillic2latin
+ if (/^(title|album|artist)=/) {
+  chomp;
+  \$before_equal=\$_;
+  \$before_equal=~s/^(title|album|artist)=.+/\$1/;
+  \$tag=\$_;
+  \$tag=~s/ - \(.+$//g;
+  \$tag=~s/^(title|album|artist)=//;
+  \$_=\$tag;
+  s/а/a/g; s/А/A/g; s/б/b/g; s/Б/B/g; s/в/w/g; s/В/W/g; s/г/g/g; s/Г/G/g; s/д/d/g; s/Д/D/g; s/ье/je/g; s/ъе/je/g; s/\sе/je/g; s/\sЕ/Je/g; s/е/e/g; s/Е/E/g; s/шё/scho/g; s/жё/sho/g; s/чё/tscho/g; s/щё/schtscho/g; s/ё/jo/g; s/Ё/Jo/g; s/ж/sh/g; s/Ж/Sh/g; s/з/s/g; s/З/S/g; s/ьи/ji/g; s/ьий/ji/g; s/ий/i/g; s/ый/y/g; s/Й/I/g; s/и/i/g; s/И/I/g; s/й/j/g; s/Й/J/g; s/кс/x/g; s/к/k/g; s/К/K/g; s/л/l/g; s/Л/L/g; s/м/m/g; s/М/M/g; s/н/n/g; s/Н/N/g; s/ьо/jo/g; s/ь/´/g; s/о/o/g; s/О/O/g; s/п/p/g; s/П/P/g; s/р/r/g; s/Р/R/g; s/с/s/g; s/С/S/g; s/т/t/g; s/Т/T/g; s/у/u/g; s/У/U/g; s/ф/f/g; s/Ф/F/g; s/х/ch/g; s/Х/Ch/g; s/ц/z/g; s/Ц/Z/g; s/ч/tsch/g; s/Ч/Tsch/g; s/ш/sch/g; s/Ш/Sch/g; s/щ/schtsch/g; s/Щ/Schtsch/g; s/ы/y/g; s/Ы/Y/g; s/э/e/; s/Э/e/; s/ю/ju/g; s/Ю/Ju/g; s/я/ja/g; s/Я/Ja/g; s/ў/w/g; s/Ў/W/g;
+  \$newtag=\$_;
+  if (\$tag eq \$newtag) {
+   \$_="\$before_equal=\$tag\n";
+  }
+  else {
+   \$_="\$before_equal=\$tag - (\$newtag)\n";
+  }
+ }
+ # date/year
+ s/^date.+([1-2][890][0-9][0-9]).+\$/date=\$1/ if (/^date=/);
+ # track no 0 in the beginning
+ s/=0+/=/ if (/^track=/);
+ # no / in track-tag
+ s/\/[0-9]+$// if (/^track=/);
+
+ # Add ' in line end - variable string end and after =
+ s/^(title|album|artist|track|date|genre)=/\$1='/;
+ s/(.+)$/\$1\'/;
+ 
+ ## Prepare commandline for ffmpeg
+ s/^/-metadata /; 
+ s/\n/ /;
+}
+EOF
+# Script for getting ID3-Tags in the right codepage - ffmpeg doesn't convert some codepages
+#echo '#!/usr/bin/perl
+#use MP3::Tag;
+#$filename = $ARGV[0];
+#$mp3 = MP3::Tag->new($filename);
+#$mp3->get_tags();
+#if (exists $mp3->{ID3v2}) {
+# $frames = $mp3->{ID3v2}->get_frame_ids();
+# foreach $frame (keys %$frames) {
+#  ($value, $desc) = $mp3->{ID3v2}->get_frame($frame);
+#  $frame="date" if ( $frame eq "TDRL" );
+#  $frame="date" if ( $frame eq "TYER" );
+#  $frame="title" if ( $frame eq "TIT2" );
+#  $frame="genre" if ( $frame eq "TCON" );
+#  $frame="album" if ( $frame eq "TALB" );
+#  $frame="track" if ( $frame eq "TRCK" );
+#  $frame="artist" if ( $frame eq "TPE1" );
+#  print "$frame : $value\n";
+# }
+#}
+#$mp3->close();
+#' >"$g_tmp"/id3tags.pl
+# perl "$g_tmp"/id3tags.pl "$g_aud" >"$g_tmp"/id3tags 2>/dev/null
+# if [ -s "$g_tmp"/id3tags ] 
+# then
+#  file -b "$g_tmp"/id3tags | grep -q "ISO-8859 text" && iconv -f ISO-8859-15 -t UTF-8 "$g_tmp"/id3tags -o "$g_tmp"/id3tags
+#  g_metadata=$(cat "$g_tmp"/id3tags | perl -pe "do \"${g_tmp}/perlsubstitutions\";")
+# else
+ g_metadata=$(cat "$g_tmp"/audinfo | perl -pe "do \"${g_tmp}/perlsubstitutions\";")
+# fi
+ echo "ffmpeg -loglevel warning -stats -i \"${g_aud}\" -vn -c:a copy -movflags +faststart -f mp4 -y \"${g_tmp}/streamable\" < /dev/null 2>&1" >"$g_tmp"/cmd
+ sshstream="ssh -p33 ${g_remotedockerffmpeg}"
+ [ -z ${g_remotedockerffmpeg} ] && sshstream="sh -c"
+ g_echo "Baue M4A ($g_aud) ${g_remotedockerffmpeg}"
+ echo "cat \"${g_tmp}/streamable\"| $sshstream 'cat | docker run -i --rm linuxserver/ffmpeg -loglevel warning -stats -i pipe: -map_metadata -1 $g_audiosettings -map a:0 -movflags faststart+empty_moov -f matroska pipe:' >\"${g_tmp}/stream\"" >>"$g_tmp"/cmd
+ echo "ffmpeg -loglevel warning -stats -i \"${g_tmp}/stream\" -c:v copy -c:a copy $g_metadata -movflags +faststart -f mp4 \"$g_tmp/m4a.m4a\" < /dev/null 2>&1" >>"$g_tmp"/cmd
+ #cat "$g_tmp"/cmd
+ sh -ex "$g_tmp"/cmd
+ if ffmpeg -i "$g_tmp/m4a.m4a" 2>&1 | egrep -q "Invalid data found when processing input|No such file or directory|Invalid argument|moov atom not found"
+ then
+  g_echo "Bearbeitung von $g_aud fehlgeschlagen"
+  rm -f "$g_tmp/m4a.m4a"
+  ffmpeg -i "$g_tmp/m4a.m4a"
+  return 1
+ fi
+ local g_timestamp=$(ls --time-style='+%Y%m%d%H%M' -l "$g_aud" | cut -d" " -f6)
+ # For update-copy or rsync one second newer file
+ #g_timestamp=$((g_timestamp+1))
+ cat "$g_tmp/m4a.m4a" >"$g_aud"
+ rm -f "$g_tmp/m4a.m4a"
+ touch -t $g_timestamp "$g_aud"
+ g_naud=$(echo "$g_aud" | perl -pe 's/\.....$/.m4a/; s/\....$/.m4a/;')
+ [ "$g_aud" != "$g_naud" ] && mv -v "$g_aud" "$g_naud"
+}

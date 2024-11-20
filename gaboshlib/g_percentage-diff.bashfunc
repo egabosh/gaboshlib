@@ -1,0 +1,22 @@
+#!/bin/bash
+
+function g_percentage-diff {
+  local g_from=$1
+  local g_to=$2
+  unset g_percentage_diff_result
+  g_num_valid_number "$g_from" "$g_to" || return 1
+  g_calc "$g_from == 0"
+  if [ $g_calc_result -eq 1 ] 
+  then
+    g_echo_note "$0: ERR: g_from=$g_from"
+    return 2
+  fi
+  g_calc "$g_to == 0"
+  if [ $g_calc_result -eq 1 ]
+  then
+    g_echo_note "$0: ERR: g_to=$g_to"
+    return 3
+  fi
+  g_calc "100 / $g_from * ( $g_to - ( $g_from ) )" || return 4
+  printf -v g_percentage_diff_result -- "%.2f" $g_calc_result
+}

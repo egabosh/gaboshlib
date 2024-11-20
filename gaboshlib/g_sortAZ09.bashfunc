@@ -1,0 +1,31 @@
+#!/bin/bash
+
+function g_sortAZ09 {
+ if ! [ -d "$@" ]
+ then
+  g_echo_error "$@ is no directory"
+  return 1
+ fi
+ cd "$@" || return 1
+ # Sort
+ for g_dir in {A..Z} {a..z} {0..9} _
+ do
+  if [ $g_dir = "_" ]
+  then
+   echo 'ls -1d * | egrep "[^0-9A-Za-z]."' >$g_tmp/lsaz
+  else
+   echo 'ls -1d $g_dir?* 2>/dev/null' >$g_tmp/lsaz
+  fi
+  . $g_tmp/lsaz | while read g_item
+  do
+   mkdir -p "${g_dir^}"
+   if [ -f "${g_dir^}/$g_item" ]
+   then
+    g_echo_error "${g_dir^}/$g_item existiert bereits"
+   else
+    mv "$g_item" "${g_dir^}"/
+   fi
+  done
+ done
+}
+

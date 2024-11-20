@@ -1,0 +1,22 @@
+#!/bin/bash
+
+function g_all-to-syslog {
+ [ -z $g_alltosyslog ] || return 0
+ g_alltosyslog=1
+ g_stdout_pipe=$g_tmp/stdout_pipe
+ mknod $g_stdout_pipe p
+ while read line
+ do
+  cat <<< $line
+  cat <<< $line | logger -t "$g_syslogtag:STDOUT"
+ done <$g_stdout_pipe &
+ exec 1>$g_stdout_pipe
+ g_stderr_pipe=$g_tmp/stderr_pipe
+ mknod $g_stderr_pipe p
+ while read line
+ do
+  cat <<< $line >&2
+  cat <<< $line | logger -t "$g_syslogtag:STDERR"
+ done <$g_stderr_pipe &
+ exec 2>$g_stderr_pipe
+}

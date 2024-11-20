@@ -1,0 +1,29 @@
+#!/bin/bash
+
+function g_retrycmd {
+  # If retry delay not set default to 5 seconds
+  [ -z "$g_tries_delay" ] && g_tries_delay=5
+  # If retrys not set default to 5 times
+  [ -z "$g_tries" ] && g_tries=5
+
+  #>&2 echo "$(g_date_print) Trying $@"
+
+  local g_try=0
+  until [ $g_try -eq $g_tries ]
+  do
+    ((g_try=g_try+1))
+    #>&2 echo "$(g_date_print) Try $g_try of $g_tries"
+    echo "$@" >$g_tmp/g_retrycmd.cmd
+    bash $g_tmp/g_retrycmd.cmd && return 0
+    g_return=$?
+    grep -q "test " $g_tmp/g_retrycmd.cmd && return $g_return
+    if [ $g_try -eq $g_tries ]
+    then
+      [ -z "$g_return" ] || g_echo_error "${FUNCNAME}: $@ failed all $g_tries tries"
+      return $g_return
+    fi
+    sleep $g_tries_delay
+  done
+
+  return ${g_return}
+}

@@ -1,0 +1,40 @@
+#!/bin/bash
+
+function g_cryptdevice {
+ local g_dev=$1
+ if [ -z $g_dev ]
+ then
+  if [ -z $DISPLAY ]
+  then
+   g_echo_error_exit "No device given"
+  else
+   g_select=$(lsblk -o NAME,FSTYPE,VENDOR,MODEL,SIZE,MOUNTPOINT -l | egrep -v 'crypt|^NAME|^sr|1K|SWAP' | perl -pe 's/ +/ /g' | while read g_line
+   do
+    g_dev=$(echo $g_line | cut -d" " -f1)
+    g_descr="$(echo $g_line | cut -d" " -f2,3,4,5,6,7,8 | perl -pe 's/ /\-/g')"
+    [ -z $g_descr ] && g_descr="dev"
+    echo -n "/dev/$g_dev $g_descr "
+   done)
+   g_dev=$(zenity --width=500 --height=300 --list --title="Please select" --text="Please select the device to crypt" --column="Device" --column="Description" $g_select)
+  fi
+ fi
+ [ -w "$g_dev" ] || g_echo_error_exit "Device $g_dev does not exist or is not writeable"
+ mount | grep -q "$g_dev" && g_echo_error_exit "Device $g_dev seems to be used/mounted"
+ g_yesno "All data on $g_dev will be deleted while encryption! Sure to proceed?"
+ g_echo_ok "Encrypting $g_dev"
+ g_sudo="sudo"
+ whoami | egrep "^root$" && g_sudo=""
+ $g_sudo dd if=/dev/urandom of="$g_dev" bs=512 count=4000 >/dev/null || g_echo_error_exit "dd on $g_dev failed"
+ $g_sudo cryptsetup luksFormat -v -y -c aes-xts-plain64 -s 512 "$g_dev" || g_echo_error_exit "Encrypting $g_dev failed"
+ g_echo_ok "Opening $g_dev"
+ $g_sudo cryptsetup luksOpen "$g_dev" g_cryptdev-$$ || g_echo_error_exit "Opening  $g_dev faile"
+ g_echo_ok "Formatting /dev/mapper/g_cryptdev-$$ ($g_dev)"
+ $g_sudo mkfs.ext4 -m0 /dev/mapper/g_cryptdev-$$ || g_echo_error_exit "Formatting /dev/mapper/g_cryptdev-$$ ($g_dev) failed"
+ $g_sudo mount /dev/mapper/g_cryptdev-$$ /mnt || g_echo_error_exit "Mounting /dev/mapper/g_cryptdev-$$ ($g_dev) failed"
+ $g_sudo chmod 777 /mnt
+ $g_sudo umount /mnt
+ g_echo_ok "Closinging /dev/mapper/g_cryptdev-$$ ($g_dev)"
+ $g_sudo cryptsetup luksClose g_cryptdev-$$ || g_echo_error_exit "Closing /dev/mapper/g_cryptdev-$$ ($g_dev) failed"
+ g_echo_ok "$g_dev successfully encrypted"
+}
+

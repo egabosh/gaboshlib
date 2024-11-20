@@ -1,0 +1,5 @@
+#!/bin/bash
+
+function g_logger {
+ cat <<< $@ | logger -t "$g_syslogtag"
+}

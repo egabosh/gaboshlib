@@ -1,0 +1,8 @@
+#!/bin/bash
+
+function g_echo_error_exit {
+ g_echo_error "$@"
+ # kill and no exit because exit may be have no fuction if this is started by Subshell
+ kill -1 $$
+}
+
