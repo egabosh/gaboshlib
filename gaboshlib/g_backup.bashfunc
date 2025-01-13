@@ -104,7 +104,7 @@ var-lib-docker
     local sshoptsnoretry="ssh -n -p $BACKUPSRVPORT -o BatchMode=yes -o StrictHostKeyChecking=accept-new  $BACKUPSRVUSER@$BACKUPSRV"
   fi
 
-  rsyncopts="-aXAH --no-inc-recursive --timeout=180 --force -yy --one-file-system --open-noatime --delete-after --ignore-missing-args --partial"
+  rsyncopts="-aXAH --no-inc-recursive --max-alloc=0 --timeout=180 --force -yy --one-file-system --open-noatime --delete-after --ignore-missing-args --partial"
   [ -n "$BACKUPEXCLUDES" ] && rsyncopts="$rsyncopts --delete-excluded --exclude-from=$BACKUPEXCLUDES"
   [ -n "$BACKUPSRV" ] && rsyncopts="$rsyncopts -e 'ssh -p $BACKUPSRVPORT'"
   [ "$BACKUPSRVUSER" == "root" ] && syncopts="$rsyncopts --numeric-ids"
