@@ -104,7 +104,7 @@ var-lib-docker
     local sshoptsnoretry="ssh -n -p $BACKUPSRVPORT -o BatchMode=yes -o StrictHostKeyChecking=accept-new  $BACKUPSRVUSER@$BACKUPSRV"
   fi
 
-  rsyncopts="-aXAH --no-inc-recursive --max-alloc=0 --timeout=180 --force -yy --one-file-system --open-noatime --delete-after --ignore-missing-args --partial"
+  rsyncopts="-aXAH --no-inc-recursive --max-alloc=0 --timeout=180 --force -yy --one-file-system --open-noatime --delete-after --ignore-missing-args --partial $9"
   [ -n "$BACKUPEXCLUDES" ] && rsyncopts="$rsyncopts --delete-excluded --exclude-from=$BACKUPEXCLUDES"
   [ -n "$BACKUPSRV" ] && rsyncopts="$rsyncopts -e 'ssh -p $BACKUPSRVPORT'"
   [ "$BACKUPSRVUSER" == "root" ] && syncopts="$rsyncopts --numeric-ids"
@@ -152,7 +152,8 @@ var-lib-docker
     
     # Backup
     [ -n "$BACKUPSRV" ] && sshrsync="$BACKUPSRVUSER@$BACKUPSRV:"
-    g_runcmd g_retrycmd rsync $rsyncoptsrun "$BACKUPDIR"/ "${sshrsync}$BACKUPSRVPATH_WITH_DATE_INCOMPLETE"/ || continue
+    echo "rsync $rsyncoptsrun \"$BACKUPDIR\"/ "${sshrsync}\"$BACKUPSRVPATH_WITH_DATE_INCOMPLETE\""/"
+    g_runcmd g_retrycmd rsync $rsyncoptsrun \"$BACKUPDIR\"/ "${sshrsync}\"$BACKUPSRVPATH_WITH_DATE_INCOMPLETE\""/ || continue
 
     # done if no direstructure
     [ -n "$NODIRSTRUCT" ] && continue
@@ -186,6 +187,16 @@ var-lib-docker
       g_runcmd $sshopts chmod -R +w "$g_toremove"
       g_runcmd $sshopts rm -r "$g_toremove"
     done
+
+    local twoyearbefore="$(date -d "now -2 years" "+%Y")"
+    $sshopts find $BACKUPSRVPATH_WITH_HOST -mindepth 1 -maxdepth 1 -type d -name "backup-${twoyearbefore}-0[2-9]*" -o -name "backup-${twoyearbefore}-1[0-2]*" | while read g_toremove 
+    do
+      g_echo_warn "Removing old Backup $g_toremove"
+      g_runcmd $sshopts chmod -R +w "$g_toremove"
+      g_runcmd $sshopts rm -r "$g_toremove"
+    done
+
+
   done
 
   return 0
