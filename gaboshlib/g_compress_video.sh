@@ -174,7 +174,7 @@ function g_compress_video {
  sshstream="ssh -p33 ${g_remotedockerffmpeg}"
  [ -z ${g_remotedockerffmpeg} ] && sshstream="sh -c"
  g_echo "Baue MP4 ($g_vid) ${g_remotedockerffmpeg}"
- echo "cat \"${g_viddone}-streamable\"| $sshstream 'cat | docker run -i --rm linuxserver/ffmpeg -loglevel warning -stats -i pipe: -f mp4 -map_metadata -1 -map_chapters -1 -map $g_vidstream -map $g_audstream -filter:v \"${g_ass}${g_vidscale}\" -c:v libx265 -crf 25 -x265-params \"vbv-maxrate=${g_vidmaxratenew}:vbv-bufsize=${g_vidmaxratenew}:log-level=warning\" -pix_fmt yuv420p -max_muxing_queue_size 9999 $g_audionew -threads 1 -movflags +faststart+empty_moov+delay_moov -f mp4 pipe:' >\"${g_viddone}-stream\"" >>"$g_tmp"/cmd
+ echo "cat \"${g_viddone}-streamable\"| $sshstream 'cat | docker run -i --rm linuxserver/ffmpeg:7.1-cli-ls9 -loglevel warning -stats -i pipe: -f mp4 -map_metadata -1 -map_chapters -1 -map $g_vidstream -map $g_audstream -filter:v \"${g_ass}${g_vidscale}\" -c:v libx265 -crf 25 -x265-params \"vbv-maxrate=${g_vidmaxratenew}:vbv-bufsize=${g_vidmaxratenew}:log-level=warning\" -pix_fmt yuv420p -max_muxing_queue_size 9999 $g_audionew -threads 1 -movflags +faststart+empty_moov+delay_moov -f mp4 pipe:' >\"${g_viddone}-stream\"" >>"$g_tmp"/cmd
  echo "ffmpeg -loglevel warning -stats -i \"${g_viddone}-stream\" -c:v copy -c:a copy  -movflags +faststart -f mp4 \"$g_viddone\" < /dev/null 2>&1" >>"$g_tmp"/cmd
 
  cat "$g_tmp"/cmd
