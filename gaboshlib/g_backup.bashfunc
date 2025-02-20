@@ -198,6 +198,11 @@ var-lib-docker
       g_runcmd $sshopts rm -r "$g_toremove"
     done
 
+    # Warning abount incomplete backups
+    if $sshopts "ls -d $BACKUPSRVPATH_WITH_HOST/backup-*/*-incomplete 2>/dev/null" >$g_tmp/incomplete_backups
+    then
+      g_echo_warn "Incomplete backups: $(cat $g_tmp/incomplete_backups)"
+    fi
 
   done
 
