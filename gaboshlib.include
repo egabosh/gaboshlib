@@ -50,3 +50,7 @@ PROMPT_COMMAND='undirect;'
 # LANG for "." as decimal separator (and not e.g. in German ",")
 export LC_NUMERIC=C
 export LANG=en_US.UTF-8
+
+# store original
+origIFS=$IFS
+
