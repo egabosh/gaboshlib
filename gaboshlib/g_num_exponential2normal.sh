@@ -1,5 +1,6 @@
 #!/bin/bash
 function g_num_exponential2normal {
+  g_num_exponential2normal_result=""
   [ -z "$1" ] && return 1
   # if there is a exponential number (for example 9.881e-05) convert it to "normal" notation
   if [[ "$1" =~ e-[0-9] ]]
