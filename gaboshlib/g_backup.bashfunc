@@ -199,7 +199,7 @@ var-lib-docker
     done
 
     # Warning abount incomplete backups
-    if $sshopts "ls -d $BACKUPSRVPATH_WITH_HOST/backup-*/*-incomplete 2>/dev/null" >$g_tmp/incomplete_backups
+    if $sshopts "ls -d $BACKUPSRVPATH_WITH_HOST/backup-*/$BACKUPDIR-incomplete 2>/dev/null" >$g_tmp/incomplete_backups
     then
       g_echo_warn "Incomplete backups: $(cat $g_tmp/incomplete_backups)"
     fi
