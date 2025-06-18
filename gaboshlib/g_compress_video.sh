@@ -49,21 +49,26 @@ function g_compress_video {
  local g_viddone="$g_tmp/$g_vidbasename-$g_rnd-DONE.mp4"
  # 5.1/6.1/7.1 Tonspuren nach vorn setzen
 
+ ffmpeg -loglevel warning -stats -i "${g_vid}" -map 0 -c copy -sn -movflags +faststart -f mp4 "${g_viddone}-streamable" < /dev/null 2>&1
+ ffmpeg -i "${g_viddone}-streamable" 2>&1 | perl -pe 's/\[0x[0-9]+\]//g' >"$g_tmp"/vidinfo
+
+ cat "$g_tmp"/vidinfo
+
  cat "$g_tmp"/vidinfo | egrep "5\.1|6\.1|7\.1" >"$g_tmp"/vidinfo51
  cat "$g_tmp"/vidinfo >>"$g_tmp"/vidinfo51
  cat "$g_tmp"/vidinfo51 >"$g_tmp"/vidinfo
  
  # Videostream wählen
  g_echo "Bearbeite Video $g_vid"
- local g_vidstream=`cat "$g_tmp"/vidinfo | grep Stream | grep ": Video: " | perl -pe 's/\#/:/g; s/\(/:/g;' | cut -d: -f 2,3 | head -n1`
+ local g_vidstream=`cat "$g_tmp"/vidinfo | grep Stream | grep ": Video: " | perl -pe 's/\#/:/g; s/\(/:/g; s/\[/:/g' | cut -d: -f 2,3 | head -n1`
  g_echo "Videostream ist $g_vidstream"
  
  # Audiostream wählen
  if cat "$g_tmp"/vidinfo | grep Stream | grep ": Audio: " | egrep -q '(ger)|(deu)'
  then
-  local g_audstream=`cat "$g_tmp"/vidinfo | grep Stream | grep ": Audio: " | egrep '(ger)|(deu)' | perl -pe 's/\#/:/g; s/\(/:/g;' | cut -d: -f 2,3 | head -n1`
+  local g_audstream=`cat "$g_tmp"/vidinfo | grep Stream | grep ": Audio: " | egrep '(ger)|(deu)' | perl -pe 's/\#/:/g; s/\(/:/g; s/\[/:/g' | cut -d: -f 2,3 | head -n1`
  else
-  local g_audstream=`cat "$g_tmp"/vidinfo | grep Stream | grep ": Audio: " | perl -pe 's/\#/:/g; s/\(/:/g;' | cut -d: -f 2,3 | head -n1`
+  local g_audstream=`cat "$g_tmp"/vidinfo | grep Stream | grep ": Audio: " | perl -pe 's/\#/:/g; s/\(/:/g; s/\[/:/g' | cut -d: -f 2,3 | head -n1`
  fi
  if [ -z "$g_audstream" ]
  then
@@ -77,7 +82,7 @@ function g_compress_video {
  # Untertitel
  if cat "$g_tmp"/vidinfo | grep Stream | grep ": Subtitle: " | grep -i 'forced' | egrep -q '(ger)|(deu)'
  then
-  local g_substream=`cat "$g_tmp"/vidinfo | grep Stream | grep ": Subtitle: " | grep -i 'forced' | egrep '(ger)|(deu)' | perl -pe 's/\#/:/g; s/\(/:/g;' | cut -d: -f 3 | head -n1`
+  local g_substream=`cat "$g_tmp"/vidinfo | grep Stream | grep ": Subtitle: " | grep -i 'forced' | egrep '(ger)|(deu)' | perl -pe 's/\#/:/g; s/\(/:/g; s/\[/:/g' | cut -d: -f 3 | head -n1`
   g_echo "Extrahiere forced Subtitle 0:$g_substream"
   cd "$g_tmp"
   mkvextract tracks "$g_vid" $g_substream:vidinfo-$g_rnd-sub
@@ -170,7 +175,7 @@ function g_compress_video {
   g_ass="ass=${g_viddone}.ass,"
  fi
  
- echo "ffmpeg -loglevel warning -stats -i \"${g_vid}\" -c:v copy -c:a copy  -movflags +faststart -f mp4 \"${g_viddone}-streamable\" < /dev/null 2>&1" >"$g_tmp"/cmd
+ #echo "ffmpeg -loglevel warning -stats -i \"${g_vid}\" -map 0 -c copy -sn -movflags +faststart -f mp4 \"${g_viddone}-streamable\" < /dev/null 2>&1" >"$g_tmp"/cmd
  sshstream="ssh -p33 ${g_remotedockerffmpeg}"
  [ -z ${g_remotedockerffmpeg} ] && sshstream="sh -c"
  g_echo "Baue MP4 ($g_vid) ${g_remotedockerffmpeg}"
@@ -199,3 +204,4 @@ function g_compress_video {
  rm "$g_viddone" "${g_viddone}-streamable" "${g_viddone}-stream"
  rm /tmp/"$g_vid_md5".g_progressing
 }
+
