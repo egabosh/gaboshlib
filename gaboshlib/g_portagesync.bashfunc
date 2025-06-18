@@ -1,7 +1,0 @@
-#!/bin/bash
-
-function g_portagesync {
- g_lockfile
- g_echo_ok "Syncing Portag Tree"
- emerge --sync -q || emerge-webrsync -q
-}
