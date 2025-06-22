@@ -10,7 +10,7 @@
 # To get specific key use ${g_json[keyname]}
 
 function g_json {
-  unset g_json
+  unset -v g_json
   IFS= g_json_tokenize < "${1:-/dev/stdin}"
   IFS= g_json_parse
 }
