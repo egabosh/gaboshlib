@@ -10,12 +10,13 @@
 # To get specific key use ${g_json[keyname]}
 
 function g_json {
-  unset -v g_json
   IFS= g_json_tokenize < "${1:-/dev/stdin}"
   IFS= g_json_parse
 }
 
 function g_json_tokenize {
+  unset tokens
+  declare -a tokens
   local j str
   while read -rN 1; do
     case $REPLY in
@@ -40,8 +41,9 @@ function g_json_tokenize {
 }
 
 function g_json_parse {
-  local i key key_plain objects o val out
+  unset -v g_json
   declare -Ag g_json
+  local i key key_plain objects o val out
   for ((i=0;i<${#tokens[@]};i++)) {
     case ${tokens[i]} in
       \{|\[)
