@@ -16,7 +16,7 @@ function g_json {
 
 function g_json_tokenize {
   unset tokens
-  declare -a tokens
+  declare -ag tokens
   local j str
   while read -rN 1; do
     case $REPLY in
