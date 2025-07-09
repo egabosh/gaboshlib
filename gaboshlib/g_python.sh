@@ -18,7 +18,7 @@ function g_python {
     [ -p "$python_output" ] || mkfifo "$python_output"
     [ -p "$python_error" ] || mkfifo "$python_error"
     # run bc in background und switch i/o to pipes
-    python3 -iuq  < "$python_input" > "$python_output" 2> "$python_error" &
+    timeout -k 260s 240s python3 -iuq  < "$python_input" > "$python_output" 2> "$python_error" &
     # store in filedescriptiors
     exec {g_fd_python_in}> "$python_input"
     exec {g_fd_python_out}< "$python_output"
