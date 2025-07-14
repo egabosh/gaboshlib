@@ -39,7 +39,7 @@ function g_calc {
   [[ $g_calc_result  == "."* ]] && g_calc_result="0$g_calc_result"
   [[ $g_calc_result  == "-."* ]] && g_calc_result="-0.${g_calc_result#-.}"
 
-  # remove ending 0 if for exabple 4.54300000
+  # remove ending 0 if for example 4.54300000
   while [[ $g_calc_result =~ [.] && ${g_calc_result: -1} == "0" ]]
   do
     g_calc_result=${g_calc_result: : -1}
