@@ -8,35 +8,15 @@ function g_calc {
   local g_jobs g_job_nums
   mapfile -t g_jobs < <(jobs -l)
 
-#  # check for multiple running bc jobs
-#  local g_bc_count=0
-#  for g_job in "${g_jobs[@]}"
-#  do
-#    # Prüfen, ob die Jobzeile "bc -ql" enthält
-#    if [[ $g_job =~ "bc -ql" ]]; then
-#      ((g_bc_count++))
-#      g_job="${g_job#* }"
-#      g_job_nums="$g_job_nums ${g_job%% *}"
-#    fi
-#  done
-#  # kill all if more then 1
-#  if (( g_bc_count > 1 ))
-#  then
-#    for g_job in $g_job_nums
-#    do
-#      kill -9 "$g_job"
-#    done
-#    mapfile -t g_jobs < <(jobs -l)
-#  fi
-  
   # check if bc is already running
   if [[ -z "$g_fd_bc_in" || -z "$g_fd_bc_out" || ${g_jobs[*]} != *bc* ]]
   then
     local bc_input="$g_tmp/$$-g_bc_input"
     local bc_output="$g_tmp/$$-g_bc_output"
     # create fifo pipe
-    [ -p "$bc_input" ] || mkfifo "$bc_input"
-    [ -p "$bc_output" ] || mkfifo "$bc_output"
+    rm -f "$bc_input" "$bc_output"
+    mkfifo "$bc_input"
+    mkfifo "$bc_output"
     # run bc in background und switch i/o to pipes
     timeout -k 260s 240s bc -ql < "$bc_input" > "$bc_output" 2>&1 &
     # store in filedescriptiors
