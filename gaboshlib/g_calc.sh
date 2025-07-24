@@ -15,8 +15,7 @@ function g_calc {
     local bc_output="$g_tmp/$$-g_bc_output"
     # create fifo pipe
     rm -f "$bc_input" "$bc_output"
-    mkfifo "$bc_input"
-    mkfifo "$bc_output"
+    mkfifo "$bc_input" "$bc_output"
     # run bc in background und switch i/o to pipes
     timeout -k 260s 240s bc -ql < "$bc_input" > "$bc_output" 2>&1 &
     # store in filedescriptiors
