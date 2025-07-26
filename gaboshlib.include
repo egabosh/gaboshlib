@@ -2,6 +2,8 @@
 
 . /etc/profile
 
+export g_debug=0
+
 ## Include functions
 for bashfunc in $(find /etc/bash/gaboshlib -type f -name "g_*.bashfunc" -o -name "g_*.sh")
 do

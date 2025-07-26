@@ -1,10 +1,8 @@
 #!/bin/bash
 
 function g_echo_note {
- [ -z "$1" ] && return 0
- echo -en "\033[97m$(g_date_print) \033[36mNOTE:"
- cat <<< "$@"
- echo -en "\033[0m"
+ [[ -z "$1" ]] && return 0
+ printf "\033[97m%(%Y-%m-%d %H:%M:%S)T \033[36mDEBUG: %s\033[0m\n" -1 "$*"
  [ -z $g_alltosyslog ] && return 0
  g_logger $@
 }
