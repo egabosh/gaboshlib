@@ -4,6 +4,9 @@ function g_median {
   # Array with numbers
   local g_numbers=("$@")
 
+  # read from stdin if no arguments
+  [[ -z "$1" ]] && mapfile -t g_numbers
+
   # sort array
   local g_sorted_numbers=($(printf "%s\n" "${g_numbers[@]}" | sort -n))
   
