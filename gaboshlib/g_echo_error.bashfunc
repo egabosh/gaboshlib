@@ -2,9 +2,7 @@
 
 function g_echo_error {
  [ -z "$1" ] && return 0
- echo -en "\033[97m$(g_date_print) \033[31mERROR:" 1>&2
- cat <<< "$@" 1>&2
- echo -en "\033[0m" 1>&2
+ printf "\033[97m%(%Y-%m-%d %H:%M:%S)T \033[31mERROR: %s\033[0m\n" -1 "$*" 1>&2
  g_logger ERROR: $@
  if ! [ $0 = /usr/local/bin/notify.sh ]
  then
