@@ -2,7 +2,12 @@
 
 function g_echo_warn {
  [ -z "$1" ] && return 0
- printf "\033[97m%(%Y-%m-%d %H:%M:%S)T \033[33mWARN: %s\033[0m\n" -1 "$*" 1>&2
+ if [[ -n ${FUNCNAME[1]} ]]
+ then
+   printf "\033[97m%(%Y-%m-%d %H:%M:%S)T \033[33m$0[$$ ${FUNCNAME[1]}] WARN: %s\033[0m\n" -1 "$*" 1>&2
+ else
+   printf "\033[97m%(%Y-%m-%d %H:%M:%S)T \033[33m$0[$$] WARN: %s\033[0m\n" -1 "$*" 1>&2
+ fi
  g_logger WARN: $@
  if ! [ $0 = /usr/local/bin/notify.sh ]
  then

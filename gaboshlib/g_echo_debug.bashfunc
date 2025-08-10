@@ -1,8 +1,14 @@
 #!/bin/bash
 
 function g_echo_debug {
- [[ -z "$1" ]] && return 0
- [[ $g_debug -gt 0 ]] && printf "\033[97m%(%Y-%m-%d %H:%M:%S)T \033[33mDEBUG: %s\033[0m\n" -1 "$*"
+ [[ -z "$1" ]] && return 1
+ [[ $g_debug -gt 0 ]] || return 0
+ if [[ -n ${FUNCNAME[1]} ]]
+ then
+   printf "\033[97m%(%Y-%m-%d %H:%M:%S)T \033[33m$0[$$ ${FUNCNAME[1]}] DEBUG: %s\033[0m\n" -1 "$*"
+ else
+   printf "\033[97m%(%Y-%m-%d %H:%M:%S)T \033[33m$0[$$] DEBUG: %s\033[0m\n" -1 "$*"
+ fi
  return 0
 }
 

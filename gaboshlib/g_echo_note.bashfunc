@@ -1,12 +1,12 @@
 #!/bin/bash
 
 function g_echo_note {
- [[ -z "$1" ]] && return 0
+ [[ -z "$1" ]] && return 1
  if [[ -n ${FUNCNAME[1]} ]]
  then
-   printf "\033[97m%(%Y-%m-%d %H:%M:%S)T \033[36m($$ ${FUNCNAME[1]}) NOTE: %s\033[0m\n" -1 "$*"
+   printf "\033[97m%(%Y-%m-%d %H:%M:%S)T \033[36m$0[$$ ${FUNCNAME[1]}] NOTE: %s\033[0m\n" -1 "$*"
  else
-   printf "\033[97m%(%Y-%m-%d %H:%M:%S)T \033[36m($$) NOTE: %s\033[0m\n" -1 "$*"
+   printf "\033[97m%(%Y-%m-%d %H:%M:%S)T \033[36m$0[$$] NOTE: %s\033[0m\n" -1 "$*"
  fi
  [ -z $g_alltosyslog ] && return 0
  g_logger $@
