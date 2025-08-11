@@ -4,9 +4,9 @@ function g_echo_error {
  [ -z "$1" ] && return 1
  if [[ -n ${FUNCNAME[1]} ]]
  then
-   printf "\033[97m%(%Y-%m-%d %H:%M:%S)T \033[31m$0[$$ ${FUNCNAME[1]}] ERROR: %s\033[0m\n" -1 "$*" 1>&2
+   printf "\033[97m%(%Y-%m-%d %H:%M:%S)T \033[31m[${FUNCNAME[1]}] ERROR: %s\033[0m\n" -1 "$*" 1>&2
  else
-   printf "\033[97m%(%Y-%m-%d %H:%M:%S)T \033[31m$0[$$] ERROR: %s\033[0m\n" -1 "$*" 1>&2
+   printf "\033[97m%(%Y-%m-%d %H:%M:%S)T \033[31mERROR: %s\033[0m\n" -1 "$*" 1>&2
  fi
 
  g_logger ERROR: $@
@@ -14,10 +14,10 @@ function g_echo_error {
  then
   if [ -x /data/debian/usr/local/bin/notify.sh ]
   then
-   cat <<< "$(date "+%F %T") $(hostname) $0($$) ERROR: $@ " | debian-chroot.sh /usr/local/bin/notify.sh
+   cat <<< "$(date "+%F %T") $(hostname) $0[$$] ERROR: $@ " | debian-chroot.sh /usr/local/bin/notify.sh
   elif [ -x /usr/local/bin/notify.sh ]
   then
-   cat <<< "$(date "+%F %T") $(hostname) $0($$) ERROR: $@" | tail -n 100 | /usr/local/bin/notify.sh
+   cat <<< "$(date "+%F %T") $(hostname) $0[$$] ERROR: $@" | tail -n 100 | /usr/local/bin/notify.sh
   fi
  fi
  [ -z $DISPLAY ] || zenity --error --ellipsize --text="$@"
