@@ -1,8 +1,8 @@
 #!/bin/bash
 
 function g_echo_debug {
- [[ -z "$1" ]] && return 1
  [[ $g_debug -gt 0 ]] || return 0
+ [[ -z "$1" ]] && return 1
  if [[ -n ${FUNCNAME[1]} ]]
  then
    printf "\033[97m%(%Y-%m-%d %H:%M:%S)T \033[35m$0[$$ ${FUNCNAME[1]}] DEBUG: %s\033[0m\n" -1 "$*"
