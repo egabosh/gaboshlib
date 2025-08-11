@@ -5,9 +5,9 @@ function g_echo_debug {
  [[ $g_debug -gt 0 ]] || return 0
  if [[ -n ${FUNCNAME[1]} ]]
  then
-   printf "\033[97m%(%Y-%m-%d %H:%M:%S)T \033[33m$0[$$ ${FUNCNAME[1]}] DEBUG: %s\033[0m\n" -1 "$*"
+   printf "\033[97m%(%Y-%m-%d %H:%M:%S)T \033[35m$0[$$ ${FUNCNAME[1]}] DEBUG: %s\033[0m\n" -1 "$*"
  else
-   printf "\033[97m%(%Y-%m-%d %H:%M:%S)T \033[33m$0[$$] DEBUG: %s\033[0m\n" -1 "$*"
+   printf "\033[97m%(%Y-%m-%d %H:%M:%S)T \033[35m$0[$$] DEBUG: %s\033[0m\n" -1 "$*"
  fi
  return 0
 }
