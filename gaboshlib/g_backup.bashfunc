@@ -138,10 +138,17 @@ var-lib-docker
       BACKUPSRVPATH_WITH_DATE_INCOMPLETE="$BACKUPSRVPATH_WITH_DATE-incomplete"
 
       # linkdest/hardlink if present
-      BACKUPSRVPATH_LINK_DEST="$($sshoptsnoretry ls -d1 "$BACKUPSRVPATH_WITH_HOST/backup-*/$BACKUPDIR" 2>/dev/null | egrep -v "/backup.+-monthly/" | sort | tail -n1 | perl -pe 's/$/\//' )"
-      BACKUPSRVPATH_LINK_DEST_INCOMPLETE="$($sshoptsnoretry ls -d1 "$BACKUPSRVPATH_WITH_HOST/backup-*/$BACKUPDIR-incomplete" 2>/dev/null | grep -v $BACKUPSRVPATH_WITH_HOST/backup-$(date +%Y-%m-%d) | tail -n 19 | sort | perl -pe 's/^/--link-dest=/; s/\n/\/ /g')"
+      if [[ -z "$sshoptsnoretry" ]] 
+      then
+        BACKUPSRVPATH_LINK_DEST="$(ls -d1 "$BACKUPSRVPATH_WITH_HOST/"backup-*"/$BACKUPDIR" 2>/dev/null | egrep -v "/backup.+-monthly/" | sort | tail -n1 | perl -pe 's/$/\//' )"
+        BACKUPSRVPATH_LINK_DEST_INCOMPLETE="$(ls -d1 "$BACKUPSRVPATH_WITH_HOST/"backup-*"/$BACKUPDIR-incomplete" 2>/dev/null | grep -v $BACKUPSRVPATH_WITH_HOST/backup-$(date +%Y-%m-%d) | tail -n 19 | sort | perl -pe 's/^/--link-dest=/; s/\n/\/ /g')"
+      else
+        # linkdest/hardlink if present
+        BACKUPSRVPATH_LINK_DEST="$($sshoptsnoretry ls -d1 "$BACKUPSRVPATH_WITH_HOST/backup-*/$BACKUPDIR" 2>/dev/null | egrep -v "/backup.+-monthly/" | sort | tail -n1 | perl -pe 's/$/\//' )"
+        BACKUPSRVPATH_LINK_DEST_INCOMPLETE="$($sshoptsnoretry ls -d1 "$BACKUPSRVPATH_WITH_HOST/backup-*/$BACKUPDIR-incomplete" 2>/dev/null | grep -v $BACKUPSRVPATH_WITH_HOST/backup-$(date +%Y-%m-%d) | tail -n 19 | sort | perl -pe 's/^/--link-dest=/; s/\n/\/ /g')"  
+      fi
       [ -n "$BACKUPSRVPATH_LINK_DEST_INCOMPLETE" ] && rsyncoptsrun="$rsyncoptsrun $BACKUPSRVPATH_LINK_DEST_INCOMPLETE"
-      #[ -n "$BACKUPSRVPATH_LINK_DEST" ] && rsyncoptsrun="$rsyncoptsrun --link-dest=$BACKUPSRVPATH_LINK_DEST"
+      [ -n "$BACKUPSRVPATH_LINK_DEST" ] && rsyncoptsrun="$rsyncoptsrun --link-dest=$BACKUPSRVPATH_LINK_DEST"
 
       g_runcmd $sshopts mkdir -p "$BACKUPSRVPATH_WITH_DATE_INCOMPLETE" || continue
 
