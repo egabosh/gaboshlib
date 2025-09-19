@@ -153,6 +153,7 @@ var-lib-docker
       g_runcmd $sshopts mkdir -p "$BACKUPSRVPATH_WITH_DATE_INCOMPLETE" || continue
 
       # Create hardlinks before rsync because of some strange behaviour with "rsync --link-dest="
+      g_echo "Pre-Copying old Backup"
       [ -n "$BACKUPSRVPATH_LINK_DEST" ] && g_runcmd $sshopts cp -rlfTP "$BACKUPSRVPATH_LINK_DEST"/ "$BACKUPSRVPATH_WITH_DATE_INCOMPLETE"/
 
     else
