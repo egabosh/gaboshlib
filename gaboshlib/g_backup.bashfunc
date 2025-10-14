@@ -71,7 +71,6 @@ dwhelper
 vpn
 .config/Nextcloud/
 nextcloud-test.*/
-nextcloud*/
 docker/nextcloud.*/data/appdata_*/preview/
 .VirtualBox/
 VirtualBox/
