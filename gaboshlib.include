@@ -27,7 +27,7 @@ fi
 [ -w /tmp ] && g_tmp=/tmp
 df -h /tmp | grep -q tmpfs && g_tmp=~/.g_tmp
 [ -w /data-crypt/share/tmp ] && g_tmp=/data-crypt/share/tmp
-g_tmp="$g_tmp/g_$g_scriptname-$$"
+g_tmp="$g_tmp/.g_tmp_$g_scriptname-$$"
 [ -d "$g_tmp" ] || mkdir -p "$g_tmp"
 
 # START and EXIT Notification
