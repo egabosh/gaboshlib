@@ -6,18 +6,18 @@ function g_check_fix_dns_stack {
 }
 
 function g_check_dns_stack  {
-  local testip
+  local testhost
   resolvectl flush-caches >/dev/null 2>&1
   nscd -i hosts >/dev/null 2>&1
-  for testip in $g_testips
+  for testhost in $g_testhosts
   do
-    if host -W1 $testip >>"${g_tmp}/g_check_dns_stack_output" 2>&1
+    if host -W1 $testhost >>"${g_tmp}/g_check_dns_stack_output" 2>&1
     then
-      g_echo "Internet DNS connection OK (testip: $testip)"
+      g_echo "Internet DNS connection OK (testhost: $testhost)"
       return 0
     fi
   done
-  g_echo_warn "DNS Resoulution seems broken $(cat "${g_tmp}/g_check_dns_stack_output")"
+  g_echo_warn "DNS Resoulution seems broken testshosts: $g_testhosts - $(cat "${g_tmp}/g_check_dns_stack_output")"
   return 1
 }
 
