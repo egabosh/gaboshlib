@@ -18,6 +18,10 @@ g_testhosts="dns3.digitalcourage.de. dns9.quad9.net. one.one.one.one. dns.google
 # WGET Options
 g_wget_opts="--timeout 10 --tries=2 --user-agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36'"
 
+g_tor_host="localhost"
+g_tor_socks5_port=9050
+g_tor_proxy_port="8118"
+
 # if runnign directly from shell
 if echo $0 | egrep -q '^-bash$|^-su$'
 then
