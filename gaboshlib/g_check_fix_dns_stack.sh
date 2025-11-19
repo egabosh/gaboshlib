@@ -44,7 +44,7 @@ function g_check_dns_stack  {
 
 function g_restart_dns_stack {
   local service
-  for service in tor dnscrypt-proxy systemd-resolved nscd
+  for service in systemd-resolved nscd
   do
     systemctl status $service.service 2>/dev/null | grep -q 'Active: active ' || continue
     g_echo_warn "DNS-Problems - restarting  $service"
