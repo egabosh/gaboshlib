@@ -49,7 +49,7 @@ exec 8> >(
 )
 function undirect(){ exec 2>&9; }
 function redirect(){ exec 2>&8; }
-rap "redirect;" DEBUG
+trap "redirect;" DEBUG
 PROMPT_COMMAND='undirect;'
 
 # LANG for "." as decimal separator (and not e.g. in German ",")
