@@ -24,7 +24,8 @@ function g_check_tor {
     systemctl restart tor.service
     return 1
   fi
-  
+
+  g_echo "Tor works!" 
   return 0
 }
 
