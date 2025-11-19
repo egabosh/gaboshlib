@@ -29,7 +29,10 @@ fi
 # TMPDIR
 [ -w /tmp ] && g_tmp=/tmp
 df -h /tmp | grep -q tmpfs && g_tmp=~/.g_tmp
-[ -w /data-crypt/share/tmp ] && g_tmp=/data-crypt/share/tmp
+if ! grep -q "/data-crypt/.*fuse" /proc/mounts
+then
+  [ -w /data-crypt/share/tmp ] && g_tmp=/data-crypt/share/tmp
+fi
 g_tmp="$g_tmp/.g_tmp_$g_scriptname-$$"
 [ -d "$g_tmp" ] || mkdir -p "$g_tmp"
 
