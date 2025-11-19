@@ -25,8 +25,8 @@ function g_restart_dns_stack {
   local service
   for service in tor dnscrypt-proxy systemd-resolved nscd
   do
+    systemctl status $service.service 2>/dev/null | grep -q 'Active: active ' || continue
     g_echo_warn "DNS-Problems - restarting  $service"
-    systemctl status $service.service 2>/dev/null | grep -q 'Active: active (running)' || continuea
     systemctl restart $service.service
     sleep 5
   done
