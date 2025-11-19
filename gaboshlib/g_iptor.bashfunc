@@ -1,5 +1,5 @@
 #!/bin/bash
 
 function g_iptor {
- g_iptor=$(curl -s --connect-timeout 3 --proxy localhost:8118 http://checkip.amazonaws.com/)
+ g_iptor=$(curl -s --connect-timeout 3 --proxy $g_tor_host:$g_tor_proxy_port https://check.torproject.org/api/ip | jq -r .IP/)
 }
