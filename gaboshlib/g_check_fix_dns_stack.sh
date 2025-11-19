@@ -11,7 +11,7 @@ function g_check_dns_stack  {
   # if we use DoHoT first check tor
   if [[ -s /etc/systemd/resolved.conf.d/DoHoT.conf ]]
   then
-    g_check_tor || g:_echo_warn "DoHoT: Tor seems not to work"
+    g_check_tor || g_echo_warn "DoHoT: Tor seems not to work"
   fi
 
   resolvectl flush-caches >/dev/null 2>&1
@@ -27,6 +27,8 @@ function g_check_dns_stack  {
         g_echo_warn "Internet DNS over dnccrypt-proxy failed (testhost: $testhost)"
         systemctl restart dnscrypt-proxy.service
         sleep 5
+      else
+        g_echo "dnccrypt-proxy works!"
       fi
     fi
     
