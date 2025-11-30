@@ -22,7 +22,7 @@ function g_check_dns_stack  {
     # if we use DoHoT check first dnscrypt-proxy
     if [[ -s /etc/systemd/resolved.conf.d/DoHoT.conf ]]
     then
-      if ! host -W1 -p 5354 $testhost 127.0.0.55 >>"${g_tmp}/g_check_dns_stack_output" 2>&1
+      if ! host -W7 -p 5354 $testhost 127.0.0.55 >>"${g_tmp}/g_check_dns_stack_output" 2>&1
       then
         g_echo_warn "Internet DNS over dnccrypt-proxy failed (testhost: $testhost)"
         systemctl restart dnscrypt-proxy.service
@@ -33,7 +33,7 @@ function g_check_dns_stack  {
     fi
     
     # general DNS Check
-    if host -W1 $testhost >>"${g_tmp}/g_check_dns_stack_output" 2>&1
+    if host -W7 $testhost >>"${g_tmp}/g_check_dns_stack_output" 2>&1
     then
       g_echo "Internet DNS connection OK (testhost: $testhost)"
       return 0
