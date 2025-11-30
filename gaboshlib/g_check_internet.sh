@@ -4,7 +4,7 @@ function g_check_internet {
   local testip
   for testip in $g_testips
   do
-    if ping -W1 -c1 ${testip} >/dev/null 2>&1
+    if ping -W3 -c1 ${testip} >/dev/null 2>&1
     then
       g_echo "Internet connection OK (testip: $testip)"
       return 0
