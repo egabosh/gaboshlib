@@ -11,7 +11,7 @@ function g_check_tor {
   then
     g_echo_error "Tor over socks5 not working. curl return code: $rc
 $curl
-$(${g_tmp}/curl.err)
+$(cat ${g_tmp}/curl.err)
 $(cat ${g_tmp}/check.torproject.org-socks.json)"
     torrestart=true
   fi
@@ -23,7 +23,7 @@ $(cat ${g_tmp}/check.torproject.org-socks.json)"
   then
     g_echo_error "Tor proxy not working. curl return code: $rc
 $curl
-$(${g_tmp}/curl.err)
+$(cat ${g_tmp}/curl.err)
 $(cat ${g_tmp}/check.torproject.org-proxy.json)"
     #torrestart=true
   fi
