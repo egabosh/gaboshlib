@@ -15,7 +15,7 @@ $(cat ${g_tmp}/check.torproject.org-socks.json)"
   fi
 
   # Check proxy
-  if ! ${g_tmp}/check.torproject.org-proxy.json | jq -a .IsTor | grep -q '^true$'
+  if ! cat ${g_tmp}/check.torproject.org-proxy.json | jq -a .IsTor | grep -q '^true$'
   then
     g_echo_error "Tor proxy not working
 $(cat ${g_tmp}/check.torproject.org-proxy.json)"
