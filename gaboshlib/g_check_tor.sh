@@ -26,8 +26,14 @@ $(cat ${g_tmp}/check.torproject.org.json)"
   # check for restart
   if [[ $torrestart = "true" ]]
   then
-    g_echo_warn "Restarting Tor"
-    systemctl restart tor.service
+    local UPTIME=$(systemctl show tor.service -p ActiveEnterTimestampMonotonic --value)
+    local NOW=$(cat /proc/uptime | awk '{print int($1*1000000)}')
+    local RUNTIME_SEC=$(( (NOW - UPTIME) / 1000000 ))
+    if [ "$RUNTIME_SEC" -gt 1800 ]
+    then
+      g_echo_warn "Restarting Tor"
+      systemctl restart tor.service
+    fi
     return 1
   fi
 
