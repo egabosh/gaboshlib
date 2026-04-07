@@ -13,6 +13,6 @@ function g_echo_ok {
 
  if [ -n "$HEALTHCHECK_FILE" ]
  then
-   echo "OK: $@" | head -n1 >>"$HEALTHCHECK_FILE"
+   echo "OK:${g_scriptname}[${FUNCNAME[1]}]:$@" | head -n1 >>"$HEALTHCHECK_FILE"
  fi
 }
