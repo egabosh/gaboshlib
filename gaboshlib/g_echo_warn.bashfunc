@@ -11,13 +11,16 @@ function g_echo_warn {
  g_logger WARN: $@
  if ! [ $0 = /usr/local/bin/notify.sh ]
  then
-  if [ -x /data/debian/usr/local/bin/notify.sh ]
-  then
-   cat <<< "$(date "+%F %T") $(hostname) $0[$$] WARNING: $@" | debian-chroot.sh /usr/local/bin/notify.sh
-  elif [ -x /usr/local/bin/notify.sh ]
+  if [ -x /usr/local/bin/notify.sh ]
   then
    cat <<< "$(date "+%F %T") $(hostname) $0[$$] WARNING: $@" | tail -n 100 | /usr/local/bin/notify.sh
   fi
  fi
  [ -z $DISPLAY ] || zenity  --notification --text="$@"
+
+ if [ -n "$HEALTHCHECK_FILE" ]
+ then
+   echo "WARN: $@" | head -n1 >>"$HEALTHCHECK_FILE"
+ fi
+
 }
