@@ -23,6 +23,6 @@ function g_echo_error {
 
  if [ -n "$HEALTHCHECK_FILE" ]
  then
-   echo "ERROR: $@" | head -n1 >>"$HEALTHCHECK_FILE"
+   echo "ERROR:${g_scriptname}[${FUNCNAME[1]}]:$@" | head -n1 >>"$HEALTHCHECK_FILE"
  fi
 }

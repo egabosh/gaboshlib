@@ -20,7 +20,7 @@ function g_echo_warn {
 
  if [ -n "$HEALTHCHECK_FILE" ]
  then
-   echo "WARN: $@" | head -n1 >>"$HEALTHCHECK_FILE"
+   echo "WARN:${g_scriptname}[${FUNCNAME[1]}]:$@" | head -n1 >>"$HEALTHCHECK_FILE"
  fi
 
 }
