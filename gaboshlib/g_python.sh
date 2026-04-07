@@ -47,7 +47,8 @@ $g_errline"
   done
   if [ -n "$g_err_msg" ]
   then
-    g_echo_error "$g_err_msg"
+    g_echo_error "$@
+$g_err_msg"
     return 1
   fi
 
