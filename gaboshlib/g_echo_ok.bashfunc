@@ -10,4 +10,9 @@ function g_echo_ok {
  fi
  g_logger OK: $@
  [ -z $DISPLAY ] || zenity --notification --text="$@"
+
+ if [ -n "$HEALTHCHECK_FILE" ]
+ then
+   echo "OK: $@" | head -n1 >>"$HEALTHCHECK_FILE"
+ fi
 }
