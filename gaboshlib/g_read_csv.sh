@@ -51,7 +51,7 @@ function g_read_csv {
   g_basename $g_csvfile
   local g_csvfile_base=${g_basename_result/\.history*.csv/}
   g_csvfile_base=${g_csvfile_base//[^a-zA-Z0-9_]/}
-  g_csvfile_base=${g_csvfile_base//ECONOMY*/}
+  #g_csvfile_base=${g_csvfile_base//ECONOMY*/}
 
   # read last lines if defined or complete csv file
   if [ -n "$g_last_lines" ]
