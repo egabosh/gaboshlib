@@ -29,8 +29,11 @@ function g_lock {
     fi
   else
     # remove if empty
-    g_echo_debug "remove emtpy logfile ${f_file}.lock"
-    rm -f "${f_file}.lock"
+    if [[ -e "${f_file}.lock" ]]
+    then
+      g_echo_debug "remove emtpy logfile ${f_file}.lock"
+      rm -f "${f_file}.lock"
+    fi
   fi
 
   printf "$g_scriptname ${FUNCNAME[2]}->${FUNCNAME[1]} $$ %(%Y-%m-%d %H:%M:%S)T" >"${f_file}.lock"
