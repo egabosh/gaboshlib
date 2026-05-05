@@ -13,6 +13,8 @@ function g_wget {
      --header="User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36" \
      --header="Content-Type: application/json" \
      --header="Accept-Language: en-US,en," \
-     $@ && break
+     $@ && return 0
   done
+  g_echo_warn "FAILED: $@"
+  return 1
 }
