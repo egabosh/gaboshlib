@@ -1,3 +1,4 @@
+#!/bin/bash
 g_check_tor_transparent_proxy() {
   local g_domain="check.tor-project.org"
   local g_hosts_file="/etc/hosts"
@@ -30,7 +31,7 @@ g_check_tor_transparent_proxy() {
 
   if [[ ${#g_dns_servers[@]} -eq 0 ]]
   then
-    echo "Error: no DNS servers found" >&2
+    g_echo_error "No DNS servers found" >&2
     return 2
   fi
 
@@ -50,7 +51,7 @@ g_check_tor_transparent_proxy() {
 
   if [[ -z "$g_resolved_ip" ]]
   then
-    echo "Error: could not resolve $g_domain via any DNS server" >&2
+    g_echo_error "Could not resolve $g_domain via any DNS server" >&2
     return 3
   fi
 
@@ -68,7 +69,7 @@ g_check_tor_transparent_proxy() {
   # Skip if no change needed
   if ! diff "$g_hosts_file" "$g_tmpfile" >/dev/null 2>&1
   then
-    cp "$g_tmpfile" "$g_hosts_file"
+    cat "$g_tmpfile" >"$g_hosts_file"
   fi
   rm -f "$g_tmpfile"  
 
@@ -77,7 +78,7 @@ g_check_tor_transparent_proxy() {
   if curl --retry 3 --retry-delay 5 --retry-all-errors --connect-timeout 5 \
     https://check.torproject.org/api/ip 2>/dev/null | jq -e '.IsTor' | grep -q '^true$'
   then
-    echo "Tor transparent proxy is already active"
+    g_echo_note "Tor transparent proxy is active"
     rc=0
   fi
 

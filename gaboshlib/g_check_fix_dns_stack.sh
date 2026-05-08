@@ -11,19 +11,20 @@ function g_check_dns_stack  {
   # if we use DoHoT first check tor
   if [[ -s /etc/systemd/resolved.conf.d/DoHoT.conf ]]
   then
-    if ! g_check_tor
+    g_check_tor
+    if [[ $? = 0]]
     then
-      if [[ $? = 99 ]]
-      then
-        g_echo_warn "DoHoT: Using transparent Tor proxy - deactivating local Tor/DoHoT"
-        rm /etc/systemd/resolved.conf.d/DoHoT.conf
-        systemctl stop tor
-        systemctl restart systemd-resolved
-        return 0
-      else
-        g_echo_warn "DoHoT: Tor seems not to work"
-        return 1
-      fi
+      g_echo "Tor OK"
+    elif [[ $? = 99 ]]
+    then
+      g_echo_warn "DoHoT: Using transparent Tor proxy - deactivating local Tor/DoHoT"
+      rm /etc/systemd/resolved.conf.d/DoHoT.conf
+      systemctl stop tor
+      systemctl restart systemd-resolved
+      return 0
+    else
+      g_echo_warn "DoHoT: Tor seems not to work"
+      return 1
     fi
   fi
 
