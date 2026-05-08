@@ -12,7 +12,7 @@ function g_check_dns_stack  {
   if [[ -s /etc/systemd/resolved.conf.d/DoHoT.conf ]]
   then
     g_check_tor
-    if [[ $? = 0]]
+    if [[ $? = 0 ]]
     then
       g_echo "Tor OK"
     elif [[ $? = 99 ]]
