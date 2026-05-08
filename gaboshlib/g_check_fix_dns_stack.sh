@@ -6,16 +6,17 @@ function g_check_fix_dns_stack {
 }
 
 function g_check_dns_stack  {
-  local testhost
+  local testhost rc
 
   # if we use DoHoT first check tor
   if [[ -s /etc/systemd/resolved.conf.d/DoHoT.conf ]]
   then
     g_check_tor
-    if [[ $? = 0 ]]
+    rc=$?
+    if [[ $rc = 0 ]]
     then
       g_echo "Tor OK"
-    elif [[ $? = 99 ]]
+    elif [[ $rc = 99 ]]
     then
       g_echo_warn "DoHoT: Using transparent Tor proxy - deactivating local Tor/DoHoT"
       rm /etc/systemd/resolved.conf.d/DoHoT.conf
@@ -59,13 +60,13 @@ function g_check_dns_stack  {
 }
 
 function g_restart_dns_stack {
-  local service
+  local service services
+  services="systemd-resolved nscd"
   if [[ -s /etc/systemd/resolved.conf.d/DoHoT.conf ]]
   then
-    systemctl restart tor
-    systemctl restart dnscrypt-proxy
+    services="$services tor dnscrypt-proxy"
   fi
-  for service in systemd-resolved nscd
+  for service in $services
   do
     systemctl status $service.service 2>/dev/null | grep -q 'Active: active ' || continue
     g_echo_warn "DNS-Problems - restarting  $service"
