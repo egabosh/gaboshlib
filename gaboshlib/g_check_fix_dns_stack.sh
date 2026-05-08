@@ -11,7 +11,20 @@ function g_check_dns_stack  {
   # if we use DoHoT first check tor
   if [[ -s /etc/systemd/resolved.conf.d/DoHoT.conf ]]
   then
-    g_check_tor || g_echo_warn "DoHoT: Tor seems not to work"
+    if ! g_check_tor
+    then
+      if [[ $? = 99 ]]
+      then
+        g_echo_warn "DoHoT: Using transparent Tor proxy - deactivating local Tor/DoHoT"
+        rm /etc/systemd/resolved.conf.d/DoHoT.conf
+        systemctl stop tor
+        systemctl restart systemd-resolved
+        return 0
+      else
+        g_echo_warn "DoHoT: Tor seems not to work"
+        return 1
+      fi
+    fi
   fi
 
   resolvectl flush-caches >/dev/null 2>&1
@@ -41,11 +54,16 @@ function g_check_dns_stack  {
 
   done
   g_echo_warn "DNS Resoulution seems broken testshosts: $g_testhosts - $(cat "${g_tmp}/g_check_dns_stack_output")"
-  return 1
+  return 2
 }
 
 function g_restart_dns_stack {
   local service
+  if [[ -s /etc/systemd/resolved.conf.d/DoHoT.conf ]]
+  then
+    systemctl restart tor
+    systemctl restart dnscrypt-proxy
+  fi
   for service in systemd-resolved nscd
   do
     systemctl status $service.service 2>/dev/null | grep -q 'Active: active ' || continue

@@ -1,8 +1,9 @@
 #!/bin/bash
 
 function g_check_tor {
-  local torrestart=false
   local curl_opts
+
+  g_check_tor_transparent_proxy && return 99
 
   for curl_opts in "--socks5-hostname $g_tor_host:$g_tor_socks5_port" "--proxy $g_tor_host:$g_tor_proxy_port"
   do
@@ -18,29 +19,13 @@ function g_check_tor {
 $curl
 $(cat ${g_tmp}/curl.err)
 $(cat ${g_tmp}/check.torproject.org.json)"
-      torrestart=true
+      return 1
     else
       g_echo "Tor working ($curl_opts): $(cat ${g_tmp}/check.torproject.org.json)"
       # stop local tor if we do not use it on localhost
       [[ $g_tor_host != "127.0.0.1" ]] && systemctl stop tor.service
+      return 0
     fi
-    rm ${g_tmp}/check.torproject.org.json
   done
-
-  # check for restart
-  if [[ $torrestart = "true" ]]
-  then
-    local UPTIME=$(systemctl show tor.service -p ActiveEnterTimestampMonotonic --value)
-    local NOW=$(cat /proc/uptime | awk '{print int($1*1000000)}')
-    local RUNTIME_SEC=$(( (NOW - UPTIME) / 1000000 ))
-    if [ "$RUNTIME_SEC" -gt 1800 ]
-    then
-      g_echo_warn "Restarting Tor"
-      systemctl restart tor.service
-    fi
-    return 1
-  fi
-
-  return 0
 }
 
