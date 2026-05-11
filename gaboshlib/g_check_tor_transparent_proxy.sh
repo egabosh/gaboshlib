@@ -6,25 +6,15 @@ g_check_tor_transparent_proxy() {
   local g_dns_servers=()
 
   # Collect DNS servers from all network interfaces via resolvectl
-  for g_iface in /sys/class/net/*/
+  while IFS= read -r line
   do
-    g_iface=$(basename "$g_iface")
-
-    if [[ "$g_iface" = "lo" ]]
-    then
-      continue
-    fi
-
-    while IFS= read -r g_server
+    dns_part="${line#*: }"
+    [[ -z "$dns_part" ]] && continue
+    while IFS= read -r ip
     do
-      if [[ -n "$g_server" ]]
-      then
-        g_dns_servers+=("$g_server")
-      fi
-    done < <(
-      resolvectl dns "$g_iface" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+'
-    )
-  done
+      [[ -n "$ip" ]] && g_dns_servers+=("$ip")
+    done < <(grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+|[0-9a-fA-F:]+:[0-9a-fA-F:]+' <<< "$dns_part")
+  done < <(resolvectl dns 2>/dev/null)
 
   # Remove duplicates
   g_dns_servers=($(printf '%s\n' "${g_dns_servers[@]}" | awk '!seen[$0]++'))
