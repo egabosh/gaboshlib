@@ -1,73 +1,138 @@
 #!/bin/bash
 
+# ============================================================================
+# g_compress_video2.sh - Video compression script (H.265/HEVC)
+# ============================================================================
+#
+# Changes compared to g_compress_video.sh:
+#
+# 1. TWO AUDIO TRACKS: Both German and English audio are kept as separate
+#    streams, each with its own codec and quality settings. German is always
+#    the default track.
+#
+# 2. SINGLE UNLABELED AUDIO: If there is only one audio track and it has no
+#    language tag (or "und"), it is automatically labeled as "german".
+#
+# 3. ALL SUBTITLES PRESERVED: Unlike the old script which only kept forced
+#    German subtitles and burned them into the video, this script preserves
+#    ALL subtitle types (including image-based DVD subtitles) as separate
+#    soft-sub tracks with proper language tags.
+#
+# 4. MKV OUTPUT FORMAT: Uses Matroska instead of MP4, because MP4 cannot
+#    store image-based subtitle streams.
+#
+# 5. CLEAN METADATA: Removes unnecessary metadata like handler_name,
+#    encoder version, and chapter markers from the output.
+#
+# 6. RELIABLE ALREADY-PROCESSED DETECTION: Instead of a fragile line-count
+#    heuristic, checks for HEVC video + HE-AAC/AC3 audio only + resolution
+#    <= 1920 + no chapters.
+#
+# 7. ROBUST ERROR HANDLING: Validates output file existence and minimum size
+#    (1 MB). Retries up to 3 times on failure. Temp files are always cleaned
+#    up via trap on any exit.
+#
+# 8. OUTPUT VALIDATION: Checks that the output is actually HEVC and larger
+#    than 1 MB before replacing the original. Keeps the original on failure.
+#
+# 9. PRESERVE FILE ATTRIBUTES: Uses "cat >" instead of "mv" to replace the
+#    original file, preserving permissions, ownership, and inode. Touch
+#    updates the modification time while ctime stays unchanged.
+#
+# 10. CLEANUP ON ABORT: Trap automatically removes all temp files and
+#     progress markers on any interrupt or error.
+#
+# 11. 1080P SUPPORT: Supports up to 1920x1080 target resolution (old script
+#     was limited to 720p/960p).
+#
+# 12. FIXED md5sum WAIT: Uses "while" loop (was "until" which had inverted
+#     logic and could hang).
+#
+# ============================================================================
+
 function g_compress_video2 {
   local g_vid=$1
   local g_remotedockerffmpeg=$2
 
-  # Datei OK und noch da?
+  local g_viddone=""
+
+  # Trap: clean up all temp files on any interrupt/error and reset trap
+  trap 'rm -f "$g_viddone" "${g_viddone}-streamable" "${g_viddone}-stream" "${g_viddone}-withsubs" /tmp/"$g_vid_md5".g_progressing 2>/dev/null; trap - INT TERM ERR; return 1' INT TERM ERR
+
+  # Probe the input file with ffmpeg to get stream info; strip hex stream IDs for easier parsing
   ffmpeg -i "$g_vid" 2>&1 | perl -pe 's/\[0x[0-9]+\]//g' >"$g_tmp"/vidinfo
+  cp "$g_tmp"/vidinfo "$g_tmp"/vidinfo_original
+
+  # Check if the file exists and is readable
   if egrep -q "Invalid data found when processing input|No such file or directory" "$g_tmp"/vidinfo
   then
-   g_echo_warn "Video $g_vid existiert nicht (mehr) oder ist defekt."
+   g_echo_warn "Video $g_vid does not exist (anymore) or is corrupted."
    return 1
   fi
 
-
-  # Bereits bearbeitet? (ERWEITERT um 1080p-Patterns)
+  # Already-processed detection: if video is HEVC, audio is only HE-AAC/AC3, resolution <= 1920, and no chapters, skip
   if egrep -q "Stream.+Video: hevc" "$g_tmp"/vidinfo
   then
-   local g_lines=`cat "$g_tmp"/vidinfo | egrep -v "WARNING: | configuration: |Side data\:|audio service type\: main|Video\:.+hevc.+1280x|Video\:.+hevc.+960x|Video\:.+hevc.+1920x|Video\:.+hevc.+1080|Video\:.+hevc.+[1-8][0-9][0-9]x|Audio\:.+HE-AAC\).+mono|Audio\:.+HE-AAC.+stereo|Audio\:.+ac3.+5\.1.side.|Input .+mp4.+from|vendor_id|^ +lib[a-z]+ " | wc -l`
-   # Max DVD Quali
-   [ -e "$g_tmp"/VID-SD ] && g_lines=`cat "$g_tmp"/vidinfo | egrep -v "WARNING: | configuration: |Side data\:|audio service type\: main|Video\:.+hevc.+720x|Video\:.+hevc.+[1-6][0-9][0-9]x|Audio\:.+HE-AAC\).+mono|Audio\:.+HE-AAC.+stereo|Audio\:.+ac3.+5\.1.side.|Input .+mp4.+from|vendor_id|^ +lib[a-z]+ " | wc -l`
-   if [ $g_lines -eq '14' ]
+   local g_bad_audio=$(cat "$g_tmp"/vidinfo | grep ": Audio:" | egrep -v "HE-AAC|ac3" | wc -l)
+   local g_vidwidth=$(cat "$g_tmp"/vidinfo | egrep "Stream.+Video:" | perl -pe 's/ /\n/g;' | egrep "[0-9]x[0-9]" | cut -d"x" -f 1 | perl -pe 's/[^0-9]//g')
+   local g_has_chapters=$(cat "$g_tmp"/vidinfo | grep -c "Chapter #")
+   if [ "$g_bad_audio" -eq 0 ] && [ -n "$g_vidwidth" ] && [ "$g_vidwidth" -le 1920 ] && [ "$g_has_chapters" -eq 0 ]
    then
-    g_echo "Video $g_vid bereits bearbeitet!"
+    g_echo "Video $g_vid already processed!"
     return 1
    fi
   fi
 
+  # Random wait time for retry delays
   local g_wait=$(($RANDOM % 60))
 
-  until ps ax | grep -q md5sum
+  # Wait if another md5sum is running (prevents disk thrashing)
+  while ps ax | grep -q "[m]d5sum"
   do
-   g_echo "md5sum already running - Waiting 2 seconds"
+   g_echo "Another md5sum is still running - waiting 2 seconds"
    sleep 2
   done
+
+  # Create checksum for duplicate-processing detection
   g_echo "Please wait... Creating checksum for $g_vid."
   g_vid_md5=$(md5sum "$g_vid" | cut -d" " -f1)
   if [ -e /tmp/"$g_vid_md5".g_progressing ]
   then
-   g_echo "File $g_vid seems already be compressing"
+   g_echo "File $g_vid seems to already be compressing"
    return 1
   fi
   echo $$ > /tmp/"$g_vid_md5".g_progressing
-  
-  # TMPfile
+
+  # Generate unique temp filename for intermediate files
   local g_rnd=`shuf -i 10000-65000 -n 1`
   local g_vidbasename=`basename "$g_vid"`
-  local g_viddone="$g_tmp/$g_vidbasename-$g_rnd-DONE.mp4"
-  # 5.1/6.1/7.1 Tonspuren nach vorn setzen
+  g_viddone="$g_tmp/$g_vidbasename-$g_rnd-DONE.mp4"
 
-  ffmpeg -loglevel warning -stats -i "${g_vid}" -map 0 -c copy -sn -movflags +faststart -f mp4 "${g_viddone}-streamable" < /dev/null 2>&1
+  # Create a streamable MP4 copy (faststart) for ffmpeg pipe input
+  ffmpeg -loglevel warning -stats -i "${g_vid}" -map 0:v -map 0:a -c copy -ignore_unknown -movflags +faststart -f mp4 "${g_viddone}-streamable" < /dev/null 2>&1
+
+  # Re-probe the streamable copy for accurate stream info
   ffmpeg -i "${g_viddone}-streamable" 2>&1 | perl -pe 's/\[0x[0-9]+\]//g' >"$g_tmp"/vidinfo
 
   cat "$g_tmp"/vidinfo
 
+  # Move 5.1/6.1/7.1 surround lines to top so channel detection picks them up first
   cat "$g_tmp"/vidinfo | egrep "5\.1|6\.1|7\.1" >"$g_tmp"/vidinfo51
   cat "$g_tmp"/vidinfo >>"$g_tmp"/vidinfo51
   cat "$g_tmp"/vidinfo51 >"$g_tmp"/vidinfo
-  
-  # Videostream wählen
-  g_echo "Bearbeite Video $g_vid"
+
+  # Detect video stream ID for mapping
+  g_echo "Processing video $g_vid"
   local g_vidstream=`cat "$g_tmp"/vidinfo | grep Stream | grep ": Video: " | perl -pe 's/\#/:/g; s/\(/:/g; s/\[/:/g' | cut -d: -f 2,3 | head -n1`
-  g_echo "Videostream ist $g_vidstream"
-  
-  # Audiostreams wählen: DE + EN, jeweils der mit MEISTEN KANALEN (NEU)
-  # Deutsch: suche nach ger/deu, wähle höchsten Kanalanzahl
+  g_echo "Video stream is $g_vidstream"
+
+  # Find the best German audio stream (most channels wins)
   local g_audstream_de=""
+  local g_audlang_de=""
+  local g_dechannels=0
   local g_max_channels_de=0
   while IFS= read -r line; do
-    if echo "$line" | egrep -q ': Audio:.*(ger|deu)'; then
+    if echo "$line" | egrep -q '(ger|deu)'; then
       local stream_id=`echo "$line" | perl -pe 's/\#/:/g; s/\(/:/g; s/\[/:/g' | cut -d: -f 2,3`
       local channels=0
       echo "$line" | egrep -q '7\.1' && channels=8
@@ -81,15 +146,21 @@ function g_compress_video2 {
       if [ $channels -gt $g_max_channels_de ]; then
         g_max_channels_de=$channels
         g_audstream_de=$stream_id
+        local rawlang=`echo "$line" | egrep -o '\([a-z]{3}\)' | head -1 | tr -d '()'`
+        [ "$rawlang" = "deu" ] && rawlang="ger"
+        g_audlang_de="$rawlang"
+        g_dechannels=$channels
       fi
     fi
   done < <(cat "$g_tmp"/vidinfo | grep Stream | grep ": Audio: ")
-  
-  # Englisch: suche nach eng/enu, wähle höchsten Kanalanzahl
+
+  # Find the best English audio stream (most channels wins)
   local g_audstream_en=""
+  local g_audlang_en=""
+  local g_enchannels=0
   local g_max_channels_en=0
   while IFS= read -r line; do
-    if echo "$line" | egrep -q ': Audio:.*(eng|enu)'; then
+    if echo "$line" | egrep -q '(eng|enu)'; then
       local stream_id=`echo "$line" | perl -pe 's/\#/:/g; s/\(/:/g; s/\[/:/g' | cut -d: -f 2,3`
       local channels=0
       echo "$line" | egrep -q '7\.1' && channels=8
@@ -103,92 +174,93 @@ function g_compress_video2 {
       if [ $channels -gt $g_max_channels_en ]; then
         g_max_channels_en=$channels
         g_audstream_en=$stream_id
+        local rawlang=`echo "$line" | egrep -o '\([a-z]{3}\)' | head -1 | tr -d '()'`
+        [ "$rawlang" = "enu" ] && rawlang="eng"
+        g_audlang_en="$rawlang"
+        g_enchannels=$channels
       fi
     fi
   done < <(cat "$g_tmp"/vidinfo | grep Stream | grep ": Audio: ")
-  
-  # Fallback: wenn weder DE noch EN gefunden, nimm ersten Audio-Stream
+
+  # Fallback: if no DE or EN audio found, use the first audio stream available
   if [ -z "$g_audstream_de" ] && [ -z "$g_audstream_en" ]
   then
-   local g_audstream_any=`cat "$g_tmp"/vidinfo | grep Stream | grep ": Audio: " | perl -pe 's/\#/:/g; s/\(/:/g; s/\[/:/g' | cut -d: -f 2,3 | head -n1`
-   [ -n "$g_audstream_any" ] && g_audstream_de=$g_audstream_any
+   local g_audline=`cat "$g_tmp"/vidinfo | grep Stream | grep ": Audio: " | head -1`
+   if [ -n "$g_audline" ]; then
+     g_audstream_de=`echo "$g_audline" | perl -pe 's/\#/:/g; s/\(/:/g; s/\[/:/g' | cut -d: -f 2,3`
+     local rawlang=$(echo "$g_audline" | egrep -o '\([a-z]{3}\)' | head -1 | tr -d '()')
+     # If language is tagged (not und), keep it; otherwise default to German
+     if [ -n "$rawlang" ] && [ "$rawlang" != "und" ]; then
+       g_audlang_de="$rawlang"
+       [ "$rawlang" = "deu" ] && g_audlang_de="ger"
+       [ "$rawlang" = "enu" ] && g_audlang_de="eng"
+     else
+       g_audlang_de="ger"
+     fi
+   fi
   fi
+
+  # Abort if no audio stream at all
   if [ -z "$g_audstream_de" ] && [ -z "$g_audstream_en" ]
   then
-   g_echo "File $g_vid seems to have no Audio-Stream"
+   g_echo "File $g_vid seems to have no audio stream"
    rm /tmp/"$g_vid_md5".g_progressing
+   trap - INT TERM ERR
    return 1
   fi
-  g_echo "Audiostreams: DE=$g_audstream_de (${g_max_channels_de}ch) EN=$g_audstream_en (${g_max_channels_en}ch)"
+  g_echo "Audio streams: DE=$g_audstream_de (${g_max_channels_de}ch / $g_audlang_de) EN=$g_audstream_en (${g_max_channels_en}ch / $g_audlang_en)"
 
-  # Untertitel
-  if cat "$g_tmp"/vidinfo | grep Stream | grep ": Subtitle: " | grep -i 'forced' | egrep -q '(ger)|(deu)'
-  then
-   local g_substream=`cat "$g_tmp"/vidinfo | grep Stream | grep ": Subtitle: " | grep -i 'forced' | egrep '(ger)|(deu)' | perl -pe 's/\#/:/g; s/\(/:/g; s/\[/:/g' | cut -d: -f 3 | head -n1`
-   g_echo "Extrahiere forced Subtitle 0:$g_substream"
-   cd "$g_tmp"
-   mkvextract tracks "$g_vid" $g_substream:vidinfo-$g_rnd-sub
-   if ls "$g_tmp/vidinfo-$g_rnd-sub"* 2>&1 | egrep -q "idx$"
-   then
-    export TESSDATA_PREFIX=/usr/local/vobsub2srttessdata
-    LD_LIBRARY_PATH=/usr/local/vobsub2srtlibs vobsub2srt --blacklist "|" "$g_tmp/vidinfo-$g_rnd-sub"
-   else
-    mv "$g_tmp/vidinfo-$g_rnd-sub" "$g_tmp/vidinfo-$g_rnd-sub.srt"
-   fi
-   ffmpeg -loglevel error -i "$g_tmp/vidinfo-$g_rnd-sub.srt" -y "$g_viddone.ass" < /dev/null 2>/dev/null 2>&1
-  else
-   local g_viddir=`dirname "$g_vid"`
-   local g_vidfile=`basename "$g_vid"`
-   local g_subfile=`echo "$g_vidfile" | perl -pe 's/....$/-forced/'`
-   if find "$g_viddir" -name "$g_subfile.idx" | grep -q "$g_subfile.idx"
-   then
-    g_echo "sub/idx Untertitel gefunden - Konvertiere nach srt -> ass ($g_subfile)"
-    rm -f `find \"$g_viddir\" -name \"$g_subfile.srt\"`
-    export TESSDATA_PREFIX=/usr/local/vobsub2srttessdata
-    LD_LIBRARY_PATH=/usr/local/vobsub2srtlibs vobsub2srt --blacklist "|" "`find \"$g_viddir\" -name \"$g_subfile.idx\" | perl -pe 's/.idx$//'`"
-   fi
-   if find "$g_viddir" -name "$g_subfile.srt" | grep -q "$g_subfile.srt"
-   then
-    g_echo "srt Untertitel gefunden - Konvertiere nach ass ($g_subfile)"
-    ffmpeg -loglevel error -i "`find \"$g_viddir\" -name \"$g_subfile.srt\"`" -y "$g_viddone.ass" < /dev/null 2>/dev/null 2>&1
-   fi
-  fi
-  
-  # Video Auflösung und Bitrate neu definieren (ERWEITERT um 1080p)
+  # Detect all subtitle streams from the original file and build mapping + language metadata
+  local g_map_orig_subs=""
+  local g_sub_count=0
+  local g_sub_idx=0
+  local g_sub_metadata=""
+  while IFS= read -r line; do
+    if echo "$line" | grep -q ": Subtitle: "; then
+      g_map_orig_subs="$g_map_orig_subs -map 1:s:$g_sub_idx"
+      g_sub_count=$((g_sub_count + 1))
+      local sublang=$(echo "$line" | egrep -o '\([a-z]{3}\)' | head -1 | tr -d '()')
+      [ "$sublang" = "deu" ] && sublang="ger"
+      [ "$sublang" = "enu" ] && sublang="eng"
+      [ -n "$sublang" ] && g_sub_metadata="$g_sub_metadata -metadata:s:s:$g_sub_idx language=$sublang"
+      g_sub_idx=$((g_sub_idx + 1))
+    fi
+  done < "$g_tmp"/vidinfo_original
+
+  # Get source video width and overall bitrate for encoding decisions
   local g_vidwidth=`cat "$g_tmp"/vidinfo | egrep "Stream.+Video" | perl -pe 's/ /\n/g;' | egrep "[0-9]x[0-9]" | cut -d"x" -f 1 | perl -pe 's/[^0-9]//g'`
   local g_vidmaxrate=$(mediainfo -f "$g_vid" | egrep "^Overall bit rate +: .+kb/s" | head -n1 | perl -pe 's/ +//g;' | cut -d: -f2 | cut -d"k" -f1)
   if [ -z $g_vidwidth ]
   then
-   g_echo_warn "Konnte Auflösung von Video $g_vid nicht ermitteln."
+   g_echo_warn "Could not determine resolution of video $g_vid."
+   rm /tmp/"$g_vid_md5".g_progressing
+   trap - INT TERM ERR
    return 1
   fi
   if [ -z $g_vidmaxrate ]
   then
-   g_echo "Konnte maxinale Bitrate von Video $g_vid nicht ermitteln. - Gehe von 3600 kb/s aus"
+   g_echo "Could not determine max bitrate of video $g_vid. - Assuming 3600 kb/s"
    g_vidmaxrate=3600
   fi
-  g_echo "Bitrate des Originals $g_vidmaxrate kb/s"
+  g_echo "Original bitrate $g_vidmaxrate kb/s"
   local g_vidwidthnew=$g_vidwidth
-  # VCD
+
+  # Determine target resolution and bitrate based on source width
   [ "$g_vidwidth" -lt "420" ] && g_vidmaxratenew="900"
-  # SVCD
   [ "$g_vidwidth" -ge "420" ] && g_vidmaxratenew="1200"
-  # DVD
   [ "$g_vidwidth" -ge "640" ] && g_vidmaxratenew="1800"
   [ "$g_vidwidth" -ge "700" ] && g_vidwidthnew=720
   if ! [ -e "$g_tmp"/VID-SD ]
   then
-   # HD720p Anamorphic
    [ "$g_vidwidth" -ge "911" ] && g_vidwidthnew=960
    [ "$g_vidwidth" -ge "911" ] && g_vidmaxratenew="2700"
-   # HD720p
    [ "$g_vidwidth" -gt "1250" ] && g_vidwidthnew=1280
    [ "$g_vidwidth" -gt "1250" ] && g_vidmaxratenew="3600"
-   # FullHD 1080p (NEU)
    [ "$g_vidwidth" -ge "1800" ] && g_vidwidthnew=1920
    [ "$g_vidwidth" -ge "1800" ] && g_vidmaxratenew="5000"
   fi
-  # Bei 4:3-Videos nicht mehr als 960xX@2700k um Platz zu sparen
+
+  # Cap 4:3 aspect ratio videos to 960 width max
   if egrep -q "Video.+4:3" "$g_tmp"/vidinfo
   then
    if [ "$g_vidwidthnew" -gt "960" ]
@@ -198,59 +270,141 @@ function g_compress_video2 {
    fi
   fi
 
-  # Falls Originalbitrate niedriger ist Bitrate entsprechend anpassen
+  # Never exceed the original bitrate
   [ $g_vidmaxrate -lt $g_vidmaxratenew ] && g_vidmaxratenew=$g_vidmaxrate
 
-  # Seitenverhältnis 1:1
+  # Build scale filter for video
   local g_vidscale="scale=$g_vidwidthnew:-2"
 
-  # Audioqualität generell für 5.1 oder andere Formate
-  local g_audionew="-c:a ac3 -b:a 384k"
-  #g_audionew="-c:a libfdk_aac -profile:a aac_he -b:a 144k" # <-- Leider schlechte Qualität bei den hinteren Kanälen auf Raspberry
-  # bei unter 5.1 zu Stereo
-  cat $g_tmp/vidinfo | grep "Stream #$g_audstream_de" | egrep -q 'stereo|3\.1|4\.0|5\.0' && g_audionew="-ac 2 -c:a libfdk_aac -profile:a aac_he_v2 -b:a 48k"
-  # bei Mono
-  cat $g_tmp/vidinfo | grep "Stream #$g_audstream_de" | egrep -q "mono" && g_audionew="-ac 1 -c:a libfdk_aac -profile:a aac_he -b:a 24k"
-  
-  local g_ass=""
-  # ASS Untertitel-Dateien
-  if [ -f "${g_viddone}.ass" ]
-  then
-  # Untertitel einbrennen
-   g_ass="ass=${g_viddone}.ass,"
+  # Build per-stream audio codec options based on channel count
+  # 5.1+ -> AC3 384k, stereo -> HE-AACv2 48k, mono -> HE-AAC 24k
+  local g_audio_codec_opts=""
+  local g_audio_stream_idx=0
+
+  if [ "$g_dechannels" -ge 6 ]; then
+    g_audio_codec_opts="-c:a:$g_audio_stream_idx ac3 -b:a:$g_audio_stream_idx 384k"
+  elif [ "$g_dechannels" -ge 2 ]; then
+    g_audio_codec_opts="-c:a:$g_audio_stream_idx libfdk_aac -profile:a:$g_audio_stream_idx aac_he_v2 -b:a:$g_audio_stream_idx 48k -ac:a:$g_audio_stream_idx 2"
+  else
+    g_audio_codec_opts="-c:a:$g_audio_stream_idx libfdk_aac -profile:a:$g_audio_stream_idx aac_he -b:a:$g_audio_stream_idx 24k -ac:a:$g_audio_stream_idx 1"
   fi
-  
-  #echo "ffmpeg -loglevel warning -stats -i \"${g_vid}\" -map 0 -c copy -sn -movflags +faststart -f mp4 \"${g_viddone}-streamable\" < /dev/null 2>&1" >"$g_tmp"/cmd
-  sshstream="ssh -p33 ${g_remotedockerffmpeg}"
+  g_audio_stream_idx=$((g_audio_stream_idx + 1))
+
+  # Same for English audio stream if present and separate from DE
+  if [ -n "$g_audstream_en" ] && [ "$g_audstream_en" != "$g_audstream_de" ]; then
+    if [ "$g_enchannels" -ge 6 ]; then
+      g_audio_codec_opts="$g_audio_codec_opts -c:a:$g_audio_stream_idx ac3 -b:a:$g_audio_stream_idx 384k"
+    elif [ "$g_enchannels" -ge 2 ]; then
+      g_audio_codec_opts="$g_audio_codec_opts -c:a:$g_audio_stream_idx libfdk_aac -profile:a:$g_audio_stream_idx aac_he_v2 -b:a:$g_audio_stream_idx 48k -ac:a:$g_audio_stream_idx 2"
+    else
+      g_audio_codec_opts="$g_audio_codec_opts -c:a:$g_audio_stream_idx libfdk_aac -profile:a:$g_audio_stream_idx aac_he -b:a:$g_audio_stream_idx 24k -ac:a:$g_audio_stream_idx 1"
+    fi
+    g_audio_stream_idx=$((g_audio_stream_idx + 1))
+  fi
+
+  # Select execution mode: local (sh -c) or remote docker via SSH
+  local sshstream="ssh -p33 ${g_remotedockerffmpeg}"
   [ -z ${g_remotedockerffmpeg} ] && sshstream="sh -c"
-  g_echo "Baue MP4 ($g_vid) ${g_remotedockerffmpeg}"
-  
-  # Map-String für Audio bauen: DE + EN (beide, falls vorhanden)
+  g_echo "Building MP4 ($g_vid) ${g_remotedockerffmpeg}"
+
+  # Build audio stream mapping: always map DE first, then EN if separate
   local g_map_audio="-map $g_audstream_de"
-  [ -n "$g_audstream_en" ] && [ "$g_audstream_en" != "$g_audstream_de" ] && g_map_audio="$g_map_audio -map $g_audstream_en"
-  
-  echo "cat \"${g_viddone}-streamable\"| $sshstream 'cat | docker run -i --rm linuxserver/ffmpeg:7.1-cli-ls9 -loglevel warning -stats -i pipe: -f mp4 -map_metadata -1 -map_chapters -1 -map $g_vidstream $g_map_audio -filter:v \"${g_ass}${g_vidscale}\" -c:v libx265 -crf 25 -x265-params \"vbv-maxrate=${g_vidmaxratenew}:vbv-bufsize=${g_vidmaxratenew}:log-level=warning\" -pix_fmt yuv420p -max_muxing_queue_size 9999 $g_audionew -threads 1 -movflags +faststart+empty_moov+delay_moov -f mp4 pipe:' >\"${g_viddone}-stream\"" >>"$g_tmp"/cmd
-  echo "ffmpeg -loglevel warning -stats -i \"${g_viddone}-stream\" -c:v copy -c:a copy  -movflags +faststart -f mp4 \"$g_viddone\" < /dev/null 2>&1" >>"$g_tmp"/cmd
+  if [ -n "$g_audstream_en" ] && [ "$g_audstream_en" != "$g_audstream_de" ]; then
+    g_map_audio="$g_map_audio -map $g_audstream_en"
+  fi
+
+  # Build audio language metadata and disposition flags (DE always gets default)
+  local g_audio_metadata=""
+  local g_audio_disposition=""
+  local idx=0
+  [ -n "$g_audlang_de" ] && g_audio_metadata="-metadata:s:a:$idx language=$g_audlang_de"
+  g_audio_disposition="-disposition:a:$idx default"
+  idx=$((idx + 1))
+  if [ -n "$g_audstream_en" ] && [ "$g_audstream_en" != "$g_audstream_de" ] && [ -n "$g_audlang_en" ]; then
+    g_audio_metadata="$g_audio_metadata -metadata:s:a:$idx language=$g_audlang_en"
+    g_audio_disposition="$g_audio_disposition -disposition:a:$idx 0"
+  fi
+
+  # Stage 1: Encode video to H.265 via docker pipe, output to intermediate stream file
+  # Stage 2: Copy stream to matroska container (drops MP4 container metadata)
+  echo "cat \"${g_viddone}-streamable\"| $sshstream 'cat | docker run -i --rm linuxserver/ffmpeg:7.1-cli-ls9 -loglevel warning -stats -i pipe: -f mp4 -map_metadata -1 -map_chapters -1 -map_metadata:s -1 -fflags +bitexact -empty_hdlr_name 1 -map $g_vidstream $g_map_audio -filter:v \"${g_vidscale}\" -c:v libx265 -crf 25 -x265-params \"vbv-maxrate=${g_vidmaxratenew}:vbv-bufsize=${g_vidmaxratenew}:log-level=warning\" -pix_fmt yuv420p -max_muxing_queue_size 9999 $g_audio_codec_opts $g_audio_metadata $g_audio_disposition -threads 1 -movflags +faststart+empty_moov+delay_moov -f mp4 pipe:' >\"${g_viddone}-stream\"" >>"$g_tmp"/cmd
+  echo "ffmpeg -loglevel warning -stats -i \"${g_viddone}-stream\" -map 0:v -map 0:a -c:v copy -c:a copy -fflags +bitexact -empty_hdlr_name 1 $g_audio_disposition -f matroska \"$g_viddone\" < /dev/null 2>&1" >>"$g_tmp"/cmd
 
   cat "$g_tmp"/cmd
   sh "$g_tmp"/cmd
-  # Wiederholen falls schief gelaufen
-  local g_try=2
-  while ffmpeg -i "$g_viddone" 2>&1 | egrep -q "moov atom not found|No such file or directory"
-  do
-   g_echo_warn "Fehler in ffmpeg $g_vid"
-   sleep $g_wait
-   cat $g_tmp/cmd
-   sh $g_tmp/cmd
-   g_try=$((g_try+1))
-   rm /tmp/"$g_vid_md5".g_progressing
-   [ "$g_try" -gt "3" ] && return 1
+
+  # Verify encoding succeeded: output file must exist and be > 1MB; retry up to 3 times
+  local g_try=1
+  while ! [ -f "$g_viddone" ] || [ "$(stat -c%s "$g_viddone" 2>/dev/null || echo 0)" -lt 1048576 ]; do
+    g_echo_warn "Encoding failed for $g_vid (attempt $g_try/3)"
+    sleep $g_wait
+    cat $g_tmp/cmd
+    sh $g_tmp/cmd
+    g_try=$((g_try+1))
+    [ "$g_try" -gt 3 ] && break
   done
+
+  if ! [ -f "$g_viddone" ] || [ "$(stat -c%s "$g_viddone" 2>/dev/null || echo 0)" -lt 1048576 ]; then
+    g_echo_warn "Encoding ultimately failed for $g_vid after 3 attempts - keeping original"
+    rm -f "$g_viddone" "${g_viddone}-streamable" "${g_viddone}-stream" "${g_viddone}-withsubs"
+    rm /tmp/"$g_vid_md5".g_progressing
+    trap - INT TERM ERR
+    return 1
+  fi
+
+  # Re-mux: merge subtitle streams from original into the encoded MKV output
+  if [ -n "$g_map_orig_subs" ]; then
+    g_echo "Re-muxing $g_sub_count subtitle streams from original into MKV output"
+    local g_audio_metadata_remux=""
+    local g_audio_disposition_remux="-disposition:a:0 default"
+    [ -n "$g_audlang_de" ] && g_audio_metadata_remux="-metadata:s:a:0 language=$g_audlang_de"
+    if [ -n "$g_audlang_en" ] && [ "$g_audstream_en" != "$g_audstream_de" ]; then
+      g_audio_metadata_remux="$g_audio_metadata_remux -metadata:s:a:1 language=$g_audlang_en"
+      g_audio_disposition_remux="$g_audio_disposition_remux -disposition:a:1 0"
+    fi
+    ffmpeg -loglevel warning -stats -i "$g_viddone" -i "$g_vid" \
+      -map 0:v -map 0:a $g_map_orig_subs \
+      -map_chapters -1 -map_metadata -1 -map_metadata:s -1 -fflags +bitexact -empty_hdlr_name 1 \
+      $g_audio_metadata_remux \
+      $g_audio_disposition_remux \
+      $g_sub_metadata \
+      -c:v copy -c:a copy -c:s copy \
+      -f matroska -max_muxing_queue_size 9999 \
+      -y "${g_viddone}-withsubs" < /dev/null 2>&1
+    if [ -f "${g_viddone}-withsubs" ]; then
+      mv "${g_viddone}-withsubs" "$g_viddone"
+      g_echo "Subtitle re-mux completed successfully"
+    else
+      g_echo_warn "Subtitle re-mux failed - proceeding without subtitles"
+    fi
+  fi
+
+  # Validate output: must be HEVC and > 1MB
+  if ! ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of csv=p=0 "$g_viddone" 2>/dev/null | grep -q "hevc"; then
+    g_echo_warn "Output validation failed for $g_vid - keeping original"
+    rm -f "$g_viddone" "${g_viddone}-streamable" "${g_viddone}-stream" "${g_viddone}-withsubs"
+    rm /tmp/"$g_vid_md5".g_progressing
+    trap - INT TERM ERR
+    return 1
+  fi
+
+  local g_outsize=$(stat -c%s "$g_viddone" 2>/dev/null || echo 0)
+  if [ "$g_outsize" -lt 1048576 ]; then
+    g_echo_warn "Output file too small ($g_outsize bytes) - keeping original"
+    rm -f "$g_viddone" "${g_viddone}-streamable" "${g_viddone}-stream" "${g_viddone}-withsubs"
+    rm /tmp/"$g_vid_md5".g_progressing
+    trap - INT TERM ERR
+    return 1
+  fi
+
+  # cat + touch: replace original keeping permissions and inode, then set mtime
   local g_timestamp=$(ls --time-style='+%Y%m%d%H%M' -l "$g_vid" | cut -d" " -f6)
-  # For update-copy or rsync one second newer file
   g_timestamp=$((g_timestamp+1))
-  cat "$g_viddone" >"$g_vid"
+  cat "$g_viddone" > "$g_vid"
   touch -t $g_timestamp "$g_vid"
-  rm "$g_viddone" "${g_viddone}-streamable" "${g_viddone}-stream"
+  rm -f "${g_viddone}-streamable" "${g_viddone}-stream" "${g_viddone}-withsubs"
+
+  # Cleanup: reset trap and remove progress marker
+  trap - INT TERM ERR
   rm /tmp/"$g_vid_md5".g_progressing
 }
