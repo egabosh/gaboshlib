@@ -16,16 +16,12 @@ function g_check_dns_stack  {
     if [[ $rc = 0 ]]
     then
       g_echo "Tor OK"
-    elif [[ $rc = 99 ]]
-    then
-      g_echo_warn "DoHoT: Using transparent Tor proxy - deactivating local Tor/DoHoT"
+    else
+      g_echo_warn "DoHoT: Tor not working - deactivating Tor/DoHoT"
       rm /etc/systemd/resolved.conf.d/DoHoT.conf
       systemctl stop tor
       systemctl restart systemd-resolved
       return 0
-    else
-      g_echo_warn "DoHoT: Tor seems not to work"
-      return 1
     fi
   fi
 
