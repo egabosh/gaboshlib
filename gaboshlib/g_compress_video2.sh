@@ -13,7 +13,7 @@
 # 2. SINGLE UNLABELED AUDIO: If there is only one audio track and it has no
 #    language tag (or "und"), it is automatically labeled as "german".
 #
-# 3. ALL SUBTITLES PRESERVED: Unlike the old script which only kept forced
+# 3. SUBTITLES PRESERVED: Unlike the old script which only kept forced
 #    German subtitles and burned them into the video, this script preserves
 #    ALL subtitle types (including image-based DVD subtitles) as separate
 #    soft-sub tracks with proper language tags.
@@ -29,11 +29,11 @@
 #    <= 1920 + no chapters.
 #
 # 7. ROBUST ERROR HANDLING: Validates output file existence and minimum size
-#    (1 MB). Retries up to 3 times on failure. Temp files are always cleaned
+#    (10 MB). Retries up to 3 times on failure. Temp files are always cleaned
 #    up via trap on any exit.
 #
 # 8. OUTPUT VALIDATION: Checks that the output is actually HEVC and larger
-#    than 1 MB before replacing the original. Keeps the original on failure.
+#    than 10 MB before replacing the original. Keeps the original on failure.
 #
 # 9. PRESERVE FILE ATTRIBUTES: Uses "cat >" instead of "mv" to replace the
 #    original file, preserving permissions, ownership, and inode. Touch
@@ -48,17 +48,38 @@
 # 12. FIXED md5sum WAIT: Uses "while" loop (was "until" which had inverted
 #     logic and could hang).
 #
-# 13. ENGLISH COMMENTS: All code comments are in English.
+# 13. CLI OPTIONS: Script uses getopts: -f <file> (required), -r <host>
+#     (optional remote docker host), -s (optional stereo downmix).
+#
+# 14. OPTIONAL STEREO DOWNMIX: With -s, 5.1/6.1/7.1 surround is downmixed
+#     to stereo (HE-AACv2 48k) instead of keeping AC3 384k.
 #
 # ============================================================================
 
 function g_compress_video2 {
-  local g_vid=$1
-  local g_remotedockerffmpeg=$2
 
-  local g_viddone=""
+  # get cli options
+  local g_vid=""
+  local g_remotedockerffmpeg=""
+  local g_stereo=false
+  local OPTIND=1
+  while getopts "f:r:s" opt; do
+    case "$opt" in
+      f) g_vid="$OPTARG" ;;
+      r) g_remotedockerffmpeg="$OPTARG" ;;
+      s) g_stereo=true ;;
+      *) g_echo_warn "Usage: $0 -f <file> [-r <host>] [-s]"; return 1 ;;
+    esac
+  done
 
+  if [ -z "$g_vid" ]; then
+    g_echo_warn "Missing required option: -f <file>"
+    return 1
+  fi
+
+  # begin
   g_echo_note "Starting $0 $@"
+  local g_viddone=""
 
   g_tmp_cleanup() {
     rm -f /tmp/"${g_vid_md5}".g_progressing 2>/dev/null
@@ -218,6 +239,12 @@ function g_compress_video2 {
    fi
   fi
 
+  # stereo downmix?
+  if [ "$g_stereo" = true ]; then
+    g_dechannels=2
+    g_enchannels=2
+  fi
+
   # Abort if no audio stream at all
   if [ -z "$g_audstream_de" ] && [ -z "$g_audstream_en" ]
   then
@@ -235,7 +262,7 @@ function g_compress_video2 {
   local g_sub_metadata=""
   while IFS= read -r line; do
     if echo "$line" | grep -q ": Subtitle: "; then
-      if echo "$line" | egrep -q "dvb_teletext|dvb_subtitle"; then
+      if echo "$line" | egrep -q "dvb_teletext"; then
         g_echo "Skipping unsupported subtitle codec in: $line"
       else
         g_map_orig_subs="$g_map_orig_subs -map 1:s:$g_sub_idx"
@@ -352,9 +379,9 @@ function g_compress_video2 {
   cat "$g_tmp"/cmd
   sh "$g_tmp"/cmd
 
-  # Verify encoding succeeded: output file must exist and be > 1MB; retry up to 3 times
+  # Verify encoding succeeded: output file must exist and be > 10MB; retry up to 3 times
   local g_try=1
-  while ! [ -f "$g_viddone" ] || [ "$(stat -c%s "$g_viddone" 2>/dev/null || echo 0)" -lt 1048576 ]; do
+  while ! [ -f "$g_viddone" ] || [ "$(stat -c%s "$g_viddone" 2>/dev/null || echo 0)" -lt 10485760 ]; do
     g_echo_warn "Encoding failed for $g_vid (attempt $g_try/3)"
     sleep $g_wait
     cat $g_tmp/cmd
@@ -363,7 +390,7 @@ function g_compress_video2 {
     [ "$g_try" -gt 3 ] && break
   done
 
-  if ! [ -f "$g_viddone" ] || [ "$(stat -c%s "$g_viddone" 2>/dev/null || echo 0)" -lt 1048576 ]; then
+  if ! [ -f "$g_viddone" ] || [ "$(stat -c%s "$g_viddone" 2>/dev/null || echo 0)" -lt 10485760 ]; then
     g_echo_warn "Encoding ultimately failed for $g_vid after 3 attempts - keeping original"
     g_tmp_cleanup
     return 1
@@ -372,18 +399,19 @@ function g_compress_video2 {
   g_echo "Encoding finished — $(( $(stat -c%s "$g_viddone" 2>/dev/null) / 1048576 )) MiB"
 
   # Re-mux: merge subtitle streams from original into the encoded MKV output
+  local g_audio_metadata_remux=""
+  local g_audio_disposition_remux="-disposition:a:0 default"
+  [ -n "$g_audlang_de" ] && g_audio_metadata_remux="-metadata:s:a:0 language=$g_audlang_de"
+  if [ -n "$g_audlang_en" ] && [ "$g_audstream_en" != "$g_audstream_de" ]; then
+    g_audio_metadata_remux="$g_audio_metadata_remux -metadata:s:a:1 language=$g_audlang_en"
+    g_audio_disposition_remux="$g_audio_disposition_remux -disposition:a:1 0"
+  fi
   if [ -n "$g_map_orig_subs" ]; then
     g_echo "Re-muxing $g_sub_count subtitle streams from original into MKV output"
-    local g_audio_metadata_remux=""
-    local g_audio_disposition_remux="-disposition:a:0 default"
-    [ -n "$g_audlang_de" ] && g_audio_metadata_remux="-metadata:s:a:0 language=$g_audlang_de"
-    if [ -n "$g_audlang_en" ] && [ "$g_audstream_en" != "$g_audstream_de" ]; then
-      g_audio_metadata_remux="$g_audio_metadata_remux -metadata:s:a:1 language=$g_audlang_en"
-      g_audio_disposition_remux="$g_audio_disposition_remux -disposition:a:1 0"
-    fi
     ffmpeg -loglevel warning -stats -i "$g_viddone" -i "$g_vid" \
       -map 0:v -map 0:a $g_map_orig_subs \
       -map_chapters -1 -map_metadata -1 -map_metadata:s -1 -fflags +bitexact -empty_hdlr_name 1 \
+      -avoid_negative_ts make_zero \
       $g_audio_metadata_remux \
       $g_audio_disposition_remux \
       $g_sub_metadata \
@@ -396,6 +424,23 @@ function g_compress_video2 {
       g_echo "Subtitle re-mux completed successfully"
     else
       g_echo_warn "Subtitle re-mux failed - proceeding without subtitles"
+    fi
+  else
+    g_echo "Re-muxing to fix duration and timestamps"
+    ffmpeg -loglevel warning -stats -i "$g_viddone" \
+      -map 0:v -map 0:a \
+      -map_chapters -1 -map_metadata -1 -map_metadata:s -1 -fflags +bitexact -empty_hdlr_name 1 \
+      -avoid_negative_ts make_zero \
+      $g_audio_metadata_remux \
+      $g_audio_disposition_remux \
+      -c:v copy -c:a copy \
+      -f matroska -max_muxing_queue_size 9999 \
+      -y "${g_viddone}-withsubs" < /dev/null 2>&1
+    if [ -f "${g_viddone}-withsubs" ]; then
+      mv "${g_viddone}-withsubs" "$g_viddone"
+      g_echo "Remux completed successfully"
+    else
+      g_echo_warn "Remux failed - proceeding with original file"
     fi
   fi
 
