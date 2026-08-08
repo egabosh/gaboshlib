@@ -360,9 +360,28 @@ function g_compress_video2 {
   #local g_vidscale="scale=$g_vidwidthnew:-2"
   #g_echo "Target: New width ${g_vidwidthnew} @ max ${g_vidmaxratenew} kb/s — CRF 25, 10-bit"
 
-  # Build scale filter: fit within 1080p, never upscale, keep aspect ratio
-  local g_vidscale="scale=1920:1080:force_original_aspect_ratio=decrease:force_divisible_by=2"
-  g_echo "Target: max 1080p (no upscaling) @ max ${g_vidmaxratenew} kb/s — CRF 25, 10-bit"
+  ## Build scale filter: fit within 1080p, never upscale, keep aspect ratio
+  #local g_vidscale="scale=1920:1080:force_original_aspect_ratio=decrease:force_divisible_by=2"
+  #g_echo "Target: max 1080p (no upscaling) @ max ${g_vidmaxratenew} kb/s — CRF 25, 10-bit"
+
+  # Determine target dimensions: never upscale, cap at 1920x1080, keep aspect ratio
+  local g_vidheight=`cat "$g_tmp"/vidinfo | egrep "Stream.+Video" | perl -pe 's/ /\n/g;' | egrep "[0-9]x[0-9]" | cut -d"x" -f 2 | perl -pe 's/[^0-9]//g'`
+  local g_sw=$g_vidwidth
+  local g_sh=$g_vidheight
+  if [ -n "$g_sh" ]
+  then
+    if [ "$g_vidwidth" -gt 1920 ] || [ "$g_vidheight" -gt 1080 ]
+    then
+      # scale factor to fit within 1920x1080 (larger dimension wins)
+      local g_factor=$(( g_vidwidth * 1000 / 1920 ))
+      local g_factor2=$(( g_vidheight * 1000 / 1080 ))
+      [ $g_factor2 -gt $g_factor ] && g_factor=$g_factor2
+      g_sw=$(( g_vidwidth * 1000 / g_factor / 2 * 2 ))
+      g_sh=$(( g_vidheight * 1000 / g_factor / 2 * 2 ))
+    fi
+  fi
+  local g_vidscale="scale=${g_sw}:${g_sh}"
+  g_echo "Target: ${g_sw}x${g_sh} (max 1080p, no upscaling) @ max ${g_vidmaxratenew} kb/s — CRF 25, 10-bit"
 
   # Build per-stream audio codec options based on channel count
   # 5.1+ -> AC3 384k, stereo -> HE-AACv2 48k, mono -> HE-AAC 24k
