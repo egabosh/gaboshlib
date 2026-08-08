@@ -32,8 +32,9 @@
 #    (10 MB). Retries up to 3 times on failure. Temp files are always cleaned
 #    up via trap on any exit.
 #
-# 8. OUTPUT VALIDATION: Checks that the output is actually HEVC and larger
-#    than 10 MB before replacing the original. Keeps the original on failure.
+# 8. OUTPUT VALIDATION: Checks that the output is actually HEVC and duration
+#    also larger than 10 MB before replacing the original. 
+#    Keeps the original on failure.
 #
 # 9. PRESERVE FILE ATTRIBUTES: Uses "cat >" instead of "mv" to replace the
 #    original file, preserving permissions, ownership, and inode. Touch
@@ -63,7 +64,8 @@ function g_compress_video2 {
   local g_remotedockerffmpeg=""
   local g_stereo=false
   local OPTIND=1
-  while getopts "f:r:s" opt; do
+  while getopts "f:r:s" opt
+  do
     case "$opt" in
       f) g_vid="$OPTARG" ;;
       r) g_remotedockerffmpeg="$OPTARG" ;;
@@ -72,7 +74,8 @@ function g_compress_video2 {
     esac
   done
 
-  if [ -z "$g_vid" ]; then
+  if [ -z "$g_vid" ]
+  then
     g_echo_warn "Missing required option: -f <file>"
     return 1
   fi
@@ -170,8 +173,10 @@ function g_compress_video2 {
   local g_audlang_de=""
   local g_dechannels=0
   local g_max_channels_de=0
-  while IFS= read -r line; do
-    if echo "$line" | egrep -q '(ger|deu)'; then
+  while IFS= read -r line
+  do
+    if echo "$line" | egrep -q '(ger|deu)'
+    then
       local stream_id=`echo "$line" | perl -pe 's/\#/:/g; s/\(/:/g; s/\[/:/g' | cut -d: -f 2,3`
       local channels=0
       echo "$line" | egrep -q '7\.1' && channels=8
@@ -182,7 +187,8 @@ function g_compress_video2 {
       echo "$line" | egrep -q '3\.1' && channels=4
       echo "$line" | egrep -q 'stereo' && [ $channels -eq 0 ] && channels=2
       echo "$line" | egrep -q 'mono' && [ $channels -eq 0 ] && channels=1
-      if [ $channels -gt $g_max_channels_de ]; then
+      if [ $channels -gt $g_max_channels_de ]
+      then
         g_max_channels_de=$channels
         g_audstream_de=$stream_id
         local rawlang=`echo "$line" | egrep -o '\([a-z]{3}\)' | head -1 | tr -d '()'`
@@ -198,8 +204,10 @@ function g_compress_video2 {
   local g_audlang_en=""
   local g_enchannels=0
   local g_max_channels_en=0
-  while IFS= read -r line; do
-    if echo "$line" | egrep -q '(eng|enu)'; then
+  while IFS= read -r line
+  do
+    if echo "$line" | egrep -q '(eng|enu)'
+    then
       local stream_id=`echo "$line" | perl -pe 's/\#/:/g; s/\(/:/g; s/\[/:/g' | cut -d: -f 2,3`
       local channels=0
       echo "$line" | egrep -q '7\.1' && channels=8
@@ -210,7 +218,8 @@ function g_compress_video2 {
       echo "$line" | egrep -q '3\.1' && channels=4
       echo "$line" | egrep -q 'stereo' && [ $channels -eq 0 ] && channels=2
       echo "$line" | egrep -q 'mono' && [ $channels -eq 0 ] && channels=1
-      if [ $channels -gt $g_max_channels_en ]; then
+      if [ $channels -gt $g_max_channels_en ]
+      then
         g_max_channels_en=$channels
         g_audstream_en=$stream_id
         local rawlang=`echo "$line" | egrep -o '\([a-z]{3}\)' | head -1 | tr -d '()'`
@@ -225,11 +234,13 @@ function g_compress_video2 {
   if [ -z "$g_audstream_de" ] && [ -z "$g_audstream_en" ]
   then
    local g_audline=`cat "$g_tmp"/vidinfo | grep Stream | grep ": Audio: " | head -1`
-   if [ -n "$g_audline" ]; then
+   if [ -n "$g_audline" ]
+   then
      g_audstream_de=`echo "$g_audline" | perl -pe 's/\#/:/g; s/\(/:/g; s/\[/:/g' | cut -d: -f 2,3`
      local rawlang=$(echo "$g_audline" | egrep -o '\([a-z]{3}\)' | head -1 | tr -d '()')
      # If language is tagged (not und), keep it; otherwise default to German
-     if [ -n "$rawlang" ] && [ "$rawlang" != "und" ]; then
+     if [ -n "$rawlang" ] && [ "$rawlang" != "und" ]
+     then
        g_audlang_de="$rawlang"
        [ "$rawlang" = "deu" ] && g_audlang_de="ger"
        [ "$rawlang" = "enu" ] && g_audlang_de="eng"
@@ -240,7 +251,8 @@ function g_compress_video2 {
   fi
 
   # stereo downmix?
-  if [ "$g_stereo" = true ]; then
+  if [ "$g_stereo" = true ]
+  then
     g_dechannels=2
     g_enchannels=2
   fi
@@ -260,9 +272,12 @@ function g_compress_video2 {
   local g_sub_count=0
   local g_sub_idx=0
   local g_sub_metadata=""
-  while IFS= read -r line; do
-    if echo "$line" | grep -q ": Subtitle: "; then
-      if echo "$line" | egrep -q "dvb_teletext"; then
+  while IFS= read -r line
+  do
+    if echo "$line" | grep -q ": Subtitle: "
+    then
+      if echo "$line" | egrep -q "dvb_teletext"
+      then
         g_echo "Skipping unsupported subtitle codec in: $line"
       else
         g_map_orig_subs="$g_map_orig_subs -map 1:s:$g_sub_idx"
@@ -328,9 +343,11 @@ function g_compress_video2 {
   local g_audio_codec_opts=""
   local g_audio_stream_idx=0
 
-  if [ "$g_dechannels" -ge 6 ]; then
+  if [ "$g_dechannels" -ge 6 ]
+  then
     g_audio_codec_opts="-c:a:$g_audio_stream_idx ac3 -b:a:$g_audio_stream_idx 384k"
-  elif [ "$g_dechannels" -ge 2 ]; then
+  elif [ "$g_dechannels" -ge 2 ]
+  then
     g_audio_codec_opts="-c:a:$g_audio_stream_idx libfdk_aac -profile:a:$g_audio_stream_idx aac_he_v2 -b:a:$g_audio_stream_idx 48k -ac:a:$g_audio_stream_idx 2"
   else
     g_audio_codec_opts="-c:a:$g_audio_stream_idx libfdk_aac -profile:a:$g_audio_stream_idx aac_he -b:a:$g_audio_stream_idx 24k -ac:a:$g_audio_stream_idx 1"
@@ -338,10 +355,13 @@ function g_compress_video2 {
   g_audio_stream_idx=$((g_audio_stream_idx + 1))
 
   # Same for English audio stream if present and separate from DE
-  if [ -n "$g_audstream_en" ] && [ "$g_audstream_en" != "$g_audstream_de" ]; then
-    if [ "$g_enchannels" -ge 6 ]; then
+  if [ -n "$g_audstream_en" ] && [ "$g_audstream_en" != "$g_audstream_de" ]
+  then
+    if [ "$g_enchannels" -ge 6 ]
+    then
       g_audio_codec_opts="$g_audio_codec_opts -c:a:$g_audio_stream_idx ac3 -b:a:$g_audio_stream_idx 384k"
-    elif [ "$g_enchannels" -ge 2 ]; then
+    elif [ "$g_enchannels" -ge 2 ]
+    then
       g_audio_codec_opts="$g_audio_codec_opts -c:a:$g_audio_stream_idx libfdk_aac -profile:a:$g_audio_stream_idx aac_he_v2 -b:a:$g_audio_stream_idx 48k -ac:a:$g_audio_stream_idx 2"
     else
       g_audio_codec_opts="$g_audio_codec_opts -c:a:$g_audio_stream_idx libfdk_aac -profile:a:$g_audio_stream_idx aac_he -b:a:$g_audio_stream_idx 24k -ac:a:$g_audio_stream_idx 1"
@@ -356,7 +376,8 @@ function g_compress_video2 {
 
   # Build audio stream mapping: always map DE first, then EN if separate
   local g_map_audio="-map $g_audstream_de"
-  if [ -n "$g_audstream_en" ] && [ "$g_audstream_en" != "$g_audstream_de" ]; then
+  if [ -n "$g_audstream_en" ] && [ "$g_audstream_en" != "$g_audstream_de" ]
+  then
     g_map_audio="$g_map_audio -map $g_audstream_en"
   fi
 
@@ -367,7 +388,8 @@ function g_compress_video2 {
   [ -n "$g_audlang_de" ] && g_audio_metadata="-metadata:s:a:$idx language=$g_audlang_de"
   g_audio_disposition="-disposition:a:$idx default"
   idx=$((idx + 1))
-  if [ -n "$g_audstream_en" ] && [ "$g_audstream_en" != "$g_audstream_de" ] && [ -n "$g_audlang_en" ]; then
+  if [ -n "$g_audstream_en" ] && [ "$g_audstream_en" != "$g_audstream_de" ] && [ -n "$g_audlang_en" ]
+  then
     g_audio_metadata="$g_audio_metadata -metadata:s:a:$idx language=$g_audlang_en"
     g_audio_disposition="$g_audio_disposition -disposition:a:$idx 0"
   fi
@@ -381,7 +403,8 @@ function g_compress_video2 {
 
   # Verify encoding succeeded: output file must exist and be > 10MB; retry up to 3 times
   local g_try=1
-  while ! [ -f "$g_viddone" ] || [ "$(stat -c%s "$g_viddone" 2>/dev/null || echo 0)" -lt 10485760 ]; do
+  while ! [ -f "$g_viddone" ] || [ "$(stat -c%s "$g_viddone" 2>/dev/null || echo 0)" -lt 10485760 ]
+  do
     g_echo_warn "Encoding failed for $g_vid (attempt $g_try/3)"
     sleep $g_wait
     cat $g_tmp/cmd
@@ -390,7 +413,8 @@ function g_compress_video2 {
     [ "$g_try" -gt 3 ] && break
   done
 
-  if ! [ -f "$g_viddone" ] || [ "$(stat -c%s "$g_viddone" 2>/dev/null || echo 0)" -lt 10485760 ]; then
+  if ! [ -f "$g_viddone" ] || [ "$(stat -c%s "$g_viddone" 2>/dev/null || echo 0)" -lt 10485760 ]
+  then
     g_echo_warn "Encoding ultimately failed for $g_vid after 3 attempts - keeping original"
     g_tmp_cleanup
     return 1
@@ -402,11 +426,13 @@ function g_compress_video2 {
   local g_audio_metadata_remux=""
   local g_audio_disposition_remux="-disposition:a:0 default"
   [ -n "$g_audlang_de" ] && g_audio_metadata_remux="-metadata:s:a:0 language=$g_audlang_de"
-  if [ -n "$g_audlang_en" ] && [ "$g_audstream_en" != "$g_audstream_de" ]; then
+  if [ -n "$g_audlang_en" ] && [ "$g_audstream_en" != "$g_audstream_de" ]
+  then
     g_audio_metadata_remux="$g_audio_metadata_remux -metadata:s:a:1 language=$g_audlang_en"
     g_audio_disposition_remux="$g_audio_disposition_remux -disposition:a:1 0"
   fi
-  if [ -n "$g_map_orig_subs" ]; then
+  if [ -n "$g_map_orig_subs" ]
+  then
     g_echo "Re-muxing $g_sub_count subtitle streams from original into MKV output"
     ffmpeg -loglevel warning -stats -i "$g_viddone" -i "$g_vid" \
       -map 0:v -map 0:a $g_map_orig_subs \
@@ -436,7 +462,8 @@ function g_compress_video2 {
       -c:v copy -c:a copy \
       -f matroska -max_muxing_queue_size 9999 \
       -y "${g_viddone}-withsubs" < /dev/null 2>&1
-    if [ -f "${g_viddone}-withsubs" ]; then
+    if [ -f "${g_viddone}-withsubs" ]
+    then
       mv "${g_viddone}-withsubs" "$g_viddone"
       g_echo "Remux completed successfully"
     else
@@ -447,7 +474,7 @@ function g_compress_video2 {
   # clean metadata
   mkvpropedit "$g_viddone" --tags all: >/dev/null || g_echo_warn "Could not clean tags"
 
-  # Validate output: HEVC video, HE-AACv2/AC3 audio, minimum size
+  # Validate output: HEVC video, HE-AACv2/AC3 audio, duration
   if ! ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of csv=p=0 "$g_viddone" 2>/dev/null | grep -q "hevc"
   then
     g_echo_warn "Video validation failed for $g_vid - not HEVC"
@@ -468,6 +495,23 @@ function g_compress_video2 {
     g_echo_warn "Output file too small ($g_outsize bytes) - keeping original"
     g_tmp_cleanup
     return 1
+  fi
+
+  # Validate duration: compressed video must match original within 2 seconds
+  local g_dur_orig=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$g_vid" 2>/dev/null)
+  local g_dur_new=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$g_viddone" 2>/dev/null)
+  if [ -n "$g_dur_orig" ] && [ -n "$g_dur_new" ]
+  then
+    local g_dur_diff=$(awk -v a="$g_dur_orig" -v b="$g_dur_new" 'BEGIN { d=a-b; if (d<0) d=-d; printf "%.3f", d }')
+    if [ "$(awk -v d="$g_dur_diff" 'BEGIN { print (d > 2) ? 1 : 0 }')" -eq 1 ]
+    then
+      g_echo_warn "Duration mismatch for $g_vid (original ${g_dur_orig}s vs new ${g_dur_new}s) - keeping original"
+      g_tmp_cleanup
+      return 1
+    fi
+    g_echo "Duration check OK: ${g_dur_orig}s vs ${g_dur_new}s"
+  else
+    g_echo_warn "Could not determine duration for validation"
   fi
 
   g_echo "Replacing original with compressed file"
