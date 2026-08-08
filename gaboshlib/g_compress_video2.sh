@@ -294,7 +294,21 @@ function g_compress_video2 {
 
   # Get source video width and overall bitrate for encoding decisions
   local g_vidwidth=`cat "$g_tmp"/vidinfo | egrep "Stream.+Video" | perl -pe 's/ /\n/g;' | egrep "[0-9]x[0-9]" | cut -d"x" -f 1 | perl -pe 's/[^0-9]//g'`
-  local g_vidmaxrate=$(mediainfo -f "$g_vid" | egrep "^Overall bit rate +: .+kb/s" | head -n1 | perl -pe 's/ +//g;' | cut -d: -f2 | cut -d"k" -f1)
+  #local g_vidmaxrate=$(mediainfo -f "$g_vid" | egrep "^Overall bit rate +: .+kb/s" | head -n1 | perl -pe 's/ +//g;' | cut -d: -f2 | cut -d"k" -f1)
+   
+  local g_vidmaxrate=$(ffprobe -v error -select_streams v:0 -show_entries stream=bit_rate -of csv=p=0 "$g_vid" 2>/dev/null)
+  [ -n "$g_vidmaxrate" ] && g_vidmaxrate=$(( g_vidmaxrate / 1000 ))
+  # MKV/VBR-Streams speichern keine Bitrate -> aus Dateigröße und Dauer ableiten
+  if [ -z "$g_vidmaxrate" ]
+  then
+    local g_vid_dur=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$g_vid" 2>/dev/null)
+    local g_vid_size=$(stat -c%s "$g_vid" 2>/dev/null)
+    if [ -n "$g_vid_dur" ] && [ -n "$g_vid_size" ]
+    then
+      g_vidmaxrate=$(( g_vid_size * 8 / ${g_vid_dur%.*} / 1000 ))
+    fi
+  fi
+
   if [ -z $g_vidwidth ]
   then
    g_echo_warn "Could not determine resolution of video $g_vid."
@@ -307,36 +321,48 @@ function g_compress_video2 {
    g_vidmaxrate=3600
   fi
   g_echo "Original bitrate $g_vidmaxrate kb/s"
-  local g_vidwidthnew=$g_vidwidth
+  #local g_vidwidthnew=$g_vidwidth
 
-  # Determine target resolution and bitrate based on source width
+  ## Determine target resolution and bitrate based on source width
+  #[ "$g_vidwidth" -lt "420" ] && g_vidmaxratenew="900"
+  #[ "$g_vidwidth" -ge "420" ] && g_vidmaxratenew="1200"
+  #[ "$g_vidwidth" -ge "640" ] && g_vidmaxratenew="1800"
+  #[ "$g_vidwidth" -ge "700" ] && g_vidwidthnew=720
+  #[ "$g_vidwidth" -ge "911" ] && g_vidwidthnew=960
+  #[ "$g_vidwidth" -ge "911" ] && g_vidmaxratenew="3600"
+  #[ "$g_vidwidth" -ge "1250" ] && g_vidwidthnew=1280
+  #[ "$g_vidwidth" -ge "1250" ] && g_vidmaxratenew="4500"
+  #[ "$g_vidwidth" -gt "1720" ] && g_vidwidthnew="$g_vidwidth"
+  #[ "$g_vidwidth" -gt "1720" ] && g_vidmaxratenew="7000"
+  #
+  ## Cap 4:3 aspect ratio videos to 960 width max
+  #if egrep -q "Video.+4:3" "$g_tmp"/vidinfo
+  #then
+  # if [ "$g_vidwidthnew" -gt "960" ]
+  # then
+  #  g_vidwidthnew=960
+  #  g_vidmaxratenew="2700"
+  # fi
+  #fi
+
+  # Determine target bitrate based on source width (smaller sources need less)
   [ "$g_vidwidth" -lt "420" ] && g_vidmaxratenew="900"
   [ "$g_vidwidth" -ge "420" ] && g_vidmaxratenew="1200"
   [ "$g_vidwidth" -ge "640" ] && g_vidmaxratenew="1800"
-  [ "$g_vidwidth" -ge "700" ] && g_vidwidthnew=720
-  [ "$g_vidwidth" -ge "911" ] && g_vidwidthnew=960
   [ "$g_vidwidth" -ge "911" ] && g_vidmaxratenew="3600"
-  [ "$g_vidwidth" -ge "1250" ] && g_vidwidthnew=1280
   [ "$g_vidwidth" -ge "1250" ] && g_vidmaxratenew="4500"
-  [ "$g_vidwidth" -gt "1750" ] && g_vidwidthnew="1920"
-  [ "$g_vidwidth" -gt "1750" ] && g_vidmaxratenew="7000"
-
-  # Cap 4:3 aspect ratio videos to 960 width max
-  if egrep -q "Video.+4:3" "$g_tmp"/vidinfo
-  then
-   if [ "$g_vidwidthnew" -gt "960" ]
-   then
-    g_vidwidthnew=960
-    g_vidmaxratenew="2700"
-   fi
-  fi
+  [ "$g_vidwidth" -gt "1920" ] && g_vidmaxratenew="7000"
 
   # Never exceed the original bitrate
   [ $g_vidmaxrate -lt $g_vidmaxratenew ] && g_vidmaxratenew=$g_vidmaxrate
 
-  # Build scale filter for video
-  local g_vidscale="scale=$g_vidwidthnew:-2"
-  g_echo "Target: New width ${g_vidwidthnew} @ max ${g_vidmaxratenew} kb/s — CRF 25, 10-bit"
+  ## Build scale filter for video
+  #local g_vidscale="scale=$g_vidwidthnew:-2"
+  #g_echo "Target: New width ${g_vidwidthnew} @ max ${g_vidmaxratenew} kb/s — CRF 25, 10-bit"
+
+  # Build scale filter: fit within 1080p, never upscale, keep aspect ratio
+  local g_vidscale="scale=1920:1080:force_original_aspect_ratio=decrease:force_divisible_by=2"
+  g_echo "Target: max 1080p (no upscaling) @ max ${g_vidmaxratenew} kb/s — CRF 25, 10-bit"
 
   # Build per-stream audio codec options based on channel count
   # 5.1+ -> AC3 384k, stereo -> HE-AACv2 48k, mono -> HE-AAC 24k
