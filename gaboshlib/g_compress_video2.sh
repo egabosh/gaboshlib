@@ -370,7 +370,7 @@ function g_compress_video2 {
   fi
 
   # Select execution mode: local (sh -c) or remote docker via SSH
-  local sshstream="ssh -p33 ${g_remotedockerffmpeg}"
+  local sshstream="ssh -p33 -o ServerAliveInterval=30 -o ServerAliveCountMax=6 -o ConnectTimeout=15 -o TCPKeepAlive=yes -o BatchMode=yes ${g_remotedockerffmpeg}"
   [ -z ${g_remotedockerffmpeg} ] && sshstream="sh -c"
   g_echo "Encoding video ($g_vid) on ${g_remotedockerffmpeg:-local}"
 
@@ -395,17 +395,47 @@ function g_compress_video2 {
   fi
 
   # Stage 1: Encode video to H.265 via docker pipe, output directly to MKV
-  echo "cat \"${g_viddone}-streamable\"| $sshstream 'cat | docker run -i --rm linuxserver/ffmpeg:7.1-cli-ls9 -loglevel warning -stats -i pipe: -map_metadata -1 -map_chapters -1 -map_metadata:s -1 -fflags +bitexact -empty_hdlr_name 1 -map $g_vidstream $g_map_audio -filter:v \"${g_vidscale}\" -c:v libx265 -crf 25 -x265-params \"vbv-maxrate=${g_vidmaxratenew}:vbv-bufsize=$(( g_vidmaxratenew * 3 / 2 )):aq-mode=3:no-sao=1:deblock=-1%3A-1:rd=4:subme=7:merange=64:log-level=error:no-info=1\" -pix_fmt yuv420p10le -max_muxing_queue_size 9999 $g_audio_codec_opts $g_audio_metadata $g_audio_disposition -threads 1 -f matroska pipe:' >\"$g_viddone\"" >"$g_tmp"/cmd
+  echo "cat \"${g_viddone}-streamable\"| $sshstream 'cat | docker run -i --rm linuxserver/ffmpeg:7.1-cli-ls9 -loglevel warning -stats -i pipe: -map_metadata -1 -map_chapters -1 -map_metadata:s -1 -fflags +bitexact -empty_hdlr_name 1 -map $g_vidstream $g_map_audio -filter:v \"${g_vidscale}\" -c:v libx265 -crf 25 -x265-params \"vbv-maxrate=${g_vidmaxratenew}:vbv-bufsize=$(( g_vidmaxratenew * 3 / 2 )):aq-mode=3:no-sao=1:deblock=-1%3A-1:rd=4:subme=7:merange=64:log-level=error:no-info=1\" -pix_fmt yuv420p10le -max_muxing_queue_size 9999 $g_audio_codec_opts $g_audio_metadata $g_audio_disposition -threads \$(( \$(nproc) / 2 )) -f matroska pipe:' >\"$g_viddone\"" >"$g_tmp"/cmd
 
   g_echo "Start encoding:"
   cat "$g_tmp"/cmd
   sh "$g_tmp"/cmd
 
-  # Verify encoding succeeded: output file must exist and be > 10MB; retry up to 3 times
+  ## Verify encoding succeeded: output file must exist and be > 10MB; retry up to 3 times
+  #local g_try=1
+  #while ! [ -f "$g_viddone" ] || [ "$(stat -c%s "$g_viddone" 2>/dev/null || echo 0)" -lt 10485760 ]
+  #do
+  #  g_echo_warn "Encoding failed for $g_vid (attempt $g_try/3)"
+  #  sleep $g_wait
+  #  cat $g_tmp/cmd
+  #  sh $g_tmp/cmd
+  #  g_try=$((g_try+1))
+  #  [ "$g_try" -gt 3 ] && break
+  #done
+#
+#  if ! [ -f "$g_viddone" ] || [ "$(stat -c%s "$g_viddone" 2>/dev/null || echo 0)" -lt 10485760 ]
+#  then
+#    g_echo_warn "Encoding ultimately failed for $g_vid after 3 attempts - keeping original"
+#    g_tmp_cleanup
+#    return 1
+#  fi
+
+  # Helper: output only valid if HEVC video, HE-AAC audio AND duration matches original within 2s
+  function g_out_valid {
+    ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of csv=p=0 "$g_viddone" 2>/dev/null | grep -q "hevc" || return 1
+    ffprobe "$g_viddone" 2>&1 | egrep -iq "he-aac|ac3" || return 1
+    [ "$(stat -c%s "$g_viddone" 2>/dev/null || echo 0)" -ge 10485760 ] || return 1
+    local g_dur_o=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$g_vid" 2>/dev/null)
+    local g_dur_n=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$g_viddone" 2>/dev/null)
+    [ -n "$g_dur_o" ] && [ -n "$g_dur_n" ] || return 1
+    awk -v a="$g_dur_o" -v b="$g_dur_n" 'BEGIN { d=a-b; if (d<0) d=-d; exit (d > 2) ? 1 : 0 }'
+  }
+
+  # Verify encoding succeeded; retry up to 3 times (also catches partial transfers)
   local g_try=1
-  while ! [ -f "$g_viddone" ] || [ "$(stat -c%s "$g_viddone" 2>/dev/null || echo 0)" -lt 10485760 ]
+  while ! g_out_valid
   do
-    g_echo_warn "Encoding failed for $g_vid (attempt $g_try/3)"
+    g_echo_warn "Encoding failed or incomplete for $g_vid (attempt $g_try/3)"
     sleep $g_wait
     cat $g_tmp/cmd
     sh $g_tmp/cmd
@@ -413,7 +443,7 @@ function g_compress_video2 {
     [ "$g_try" -gt 3 ] && break
   done
 
-  if ! [ -f "$g_viddone" ] || [ "$(stat -c%s "$g_viddone" 2>/dev/null || echo 0)" -lt 10485760 ]
+  if ! g_out_valid
   then
     g_echo_warn "Encoding ultimately failed for $g_vid after 3 attempts - keeping original"
     g_tmp_cleanup
@@ -474,44 +504,52 @@ function g_compress_video2 {
   # clean metadata
   mkvpropedit "$g_viddone" --tags all: >/dev/null || g_echo_warn "Could not clean tags"
 
-  # Validate output: HEVC video, HE-AACv2/AC3 audio, duration
-  if ! ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of csv=p=0 "$g_viddone" 2>/dev/null | grep -q "hevc"
+#  # Validate output: HEVC video, HE-AACv2/AC3 audio, duration
+#  if ! ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of csv=p=0 "$g_viddone" 2>/dev/null | grep -q "hevc"
+#  then
+#    g_echo_warn "Video validation failed for $g_vid - not HEVC"
+#    g_tmp_cleanup
+#    return 1
+#  fi
+#
+#  if ! ffprobe "$g_viddone" 2>&1 | egrep -iq "he-aacv2|ac3"
+#  then
+#    g_echo_warn "Audio validation failed for $g_vid - unexpected codec found"
+#    g_tmp_cleanup
+#    return 1
+#  fi
+#
+#  local g_outsize=$(stat -c%s "$g_viddone" 2>/dev/null || echo 0)
+#  if [ "$g_outsize" -lt 10485760 ]
+#  then
+#    g_echo_warn "Output file too small ($g_outsize bytes) - keeping original"
+#    g_tmp_cleanup
+#    return 1
+#  fi
+#
+#  # Validate duration: compressed video must match original within 2 seconds
+#  local g_dur_orig=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$g_vid" 2>/dev/null)
+#  local g_dur_new=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$g_viddone" 2>/dev/null)
+#  if [ -n "$g_dur_orig" ] && [ -n "$g_dur_new" ]
+#  then
+#    local g_dur_diff=$(awk -v a="$g_dur_orig" -v b="$g_dur_new" 'BEGIN { d=a-b; if (d<0) d=-d; printf "%.3f", d }')
+#    if [ "$(awk -v d="$g_dur_diff" 'BEGIN { print (d > 2) ? 1 : 0 }')" -eq 1 ]
+#    then
+#      g_echo_warn "Duration mismatch for $g_vid (original ${g_dur_orig}s vs new ${g_dur_new}s) - keeping original"
+#      g_tmp_cleanup
+#      return 1
+#    fi
+#    g_echo "Duration check OK: ${g_dur_orig}s vs ${g_dur_new}s"
+#  else
+#    g_echo_warn "Could not determine duration for validation"
+#  fi
+
+  # Validate output: HEVC video, HE-AACv2/AC3 audio, size, duration
+  if ! g_out_valid
   then
-    g_echo_warn "Video validation failed for $g_vid - not HEVC"
+    g_echo_warn "Output validation failed for $g_vid - keeping original"
     g_tmp_cleanup
     return 1
-  fi
-
-  if ! ffprobe "$g_viddone" 2>&1 | egrep -iq "he-aacv2|ac3"
-  then
-    g_echo_warn "Audio validation failed for $g_vid - unexpected codec found"
-    g_tmp_cleanup
-    return 1
-  fi
-
-  local g_outsize=$(stat -c%s "$g_viddone" 2>/dev/null || echo 0)
-  if [ "$g_outsize" -lt 10485760 ]
-  then
-    g_echo_warn "Output file too small ($g_outsize bytes) - keeping original"
-    g_tmp_cleanup
-    return 1
-  fi
-
-  # Validate duration: compressed video must match original within 2 seconds
-  local g_dur_orig=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$g_vid" 2>/dev/null)
-  local g_dur_new=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$g_viddone" 2>/dev/null)
-  if [ -n "$g_dur_orig" ] && [ -n "$g_dur_new" ]
-  then
-    local g_dur_diff=$(awk -v a="$g_dur_orig" -v b="$g_dur_new" 'BEGIN { d=a-b; if (d<0) d=-d; printf "%.3f", d }')
-    if [ "$(awk -v d="$g_dur_diff" 'BEGIN { print (d > 2) ? 1 : 0 }')" -eq 1 ]
-    then
-      g_echo_warn "Duration mismatch for $g_vid (original ${g_dur_orig}s vs new ${g_dur_new}s) - keeping original"
-      g_tmp_cleanup
-      return 1
-    fi
-    g_echo "Duration check OK: ${g_dur_orig}s vs ${g_dur_new}s"
-  else
-    g_echo_warn "Could not determine duration for validation"
   fi
 
   g_echo "Replacing original with compressed file"
