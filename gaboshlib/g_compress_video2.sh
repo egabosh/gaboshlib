@@ -318,8 +318,8 @@ function g_compress_video2 {
   [ "$g_vidwidth" -ge "911" ] && g_vidmaxratenew="3600"
   [ "$g_vidwidth" -ge "1250" ] && g_vidwidthnew=1280
   [ "$g_vidwidth" -ge "1250" ] && g_vidmaxratenew="4500"
-  [ "$g_vidwidth" -gt "1800" ] && g_vidwidthnew=1920
-  [ "$g_vidwidth" -gt "1800" ] && g_vidmaxratenew="7000"
+  [ "$g_vidwidth" -gt "1750" ] && g_vidwidthnew="1920"
+  [ "$g_vidwidth" -gt "1750" ] && g_vidmaxratenew="7000"
 
   # Cap 4:3 aspect ratio videos to 960 width max
   if egrep -q "Video.+4:3" "$g_tmp"/vidinfo
