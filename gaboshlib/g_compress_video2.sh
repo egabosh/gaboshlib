@@ -80,11 +80,14 @@ function g_compress_video2 {
     return 1
   fi
 
+  # use absolute path
+  g_vid=$(realpath "$g_vid")
+
   # begin
-  g_echo_note "Starting $0 $@"
+  g_echo_note "Starting ${FUNCNAME} $@"
   local g_viddone=""
 
-  g_tmp_cleanup() {
+  function g_tmp_cleanup {
     rm -f /tmp/"${g_vid_md5}".g_progressing 2>/dev/null
     rm -f "$g_tmp"/vidinfo "$g_tmp"/vidinfo_original "$g_tmp"/vidinfo51 "$g_tmp"/cmd
     rm -f "$g_viddone" "${g_viddone}-streamable" "${g_viddone}-withsubs" "${g_viddone}-raw"
@@ -102,6 +105,7 @@ function g_compress_video2 {
   if egrep -q "Invalid data found when processing input|No such file or directory" "$g_tmp"/vidinfo
   then
    g_echo_warn "Video $g_vid does not exist (anymore) or is corrupted."
+   trap - INT TERM ERR
    return 1
   fi
 
@@ -114,6 +118,7 @@ function g_compress_video2 {
    if [ "$g_bad_audio" -eq 0 ] && [ -n "$g_vidwidth" ] && [ "$g_vidwidth" -le 1920 ] && [ "$g_has_chapters" -eq 0 ]
    then
     g_echo "Video $g_vid already processed!"
+    trap - INT TERM ERR
     return 1
    fi
   fi
@@ -130,10 +135,11 @@ function g_compress_video2 {
 
   # Create checksum for duplicate-processing detection
   g_echo "Please wait... Creating checksum for $g_vid."
-  g_vid_md5=$(md5sum "$g_vid" | cut -d" " -f1)
+  local g_vid_md5=$(md5sum "$g_vid" | cut -d" " -f1)
   if [ -e /tmp/"$g_vid_md5".g_progressing ]
   then
    g_echo "File $g_vid seems to already be compressing"
+   trap - INT TERM ERR
    return 1
   fi
   echo $$ > /tmp/"$g_vid_md5".g_progressing
@@ -294,7 +300,6 @@ function g_compress_video2 {
 
   # Get source video width and overall bitrate for encoding decisions
   local g_vidwidth=`cat "$g_tmp"/vidinfo | egrep "Stream.+Video" | perl -pe 's/ /\n/g;' | egrep "[0-9]x[0-9]" | cut -d"x" -f 1 | perl -pe 's/[^0-9]//g'`
-  #local g_vidmaxrate=$(mediainfo -f "$g_vid" | egrep "^Overall bit rate +: .+kb/s" | head -n1 | perl -pe 's/ +//g;' | cut -d: -f2 | cut -d"k" -f1)
    
   local g_vidmaxrate=$(ffprobe -v error -select_streams v:0 -show_entries stream=bit_rate -of csv=p=0 "$g_vid" 2>/dev/null)
   [ -n "$g_vidmaxrate" ] && g_vidmaxrate=$(( g_vidmaxrate / 1000 ))
@@ -321,29 +326,6 @@ function g_compress_video2 {
    g_vidmaxrate=3600
   fi
   g_echo "Original bitrate $g_vidmaxrate kb/s"
-  #local g_vidwidthnew=$g_vidwidth
-
-  ## Determine target resolution and bitrate based on source width
-  #[ "$g_vidwidth" -lt "420" ] && g_vidmaxratenew="900"
-  #[ "$g_vidwidth" -ge "420" ] && g_vidmaxratenew="1200"
-  #[ "$g_vidwidth" -ge "640" ] && g_vidmaxratenew="1800"
-  #[ "$g_vidwidth" -ge "700" ] && g_vidwidthnew=720
-  #[ "$g_vidwidth" -ge "911" ] && g_vidwidthnew=960
-  #[ "$g_vidwidth" -ge "911" ] && g_vidmaxratenew="3600"
-  #[ "$g_vidwidth" -ge "1250" ] && g_vidwidthnew=1280
-  #[ "$g_vidwidth" -ge "1250" ] && g_vidmaxratenew="4500"
-  #[ "$g_vidwidth" -gt "1720" ] && g_vidwidthnew="$g_vidwidth"
-  #[ "$g_vidwidth" -gt "1720" ] && g_vidmaxratenew="7000"
-  #
-  ## Cap 4:3 aspect ratio videos to 960 width max
-  #if egrep -q "Video.+4:3" "$g_tmp"/vidinfo
-  #then
-  # if [ "$g_vidwidthnew" -gt "960" ]
-  # then
-  #  g_vidwidthnew=960
-  #  g_vidmaxratenew="2700"
-  # fi
-  #fi
 
   # Determine target bitrate based on source width (smaller sources need less)
   [ "$g_vidwidth" -lt "420" ] && g_vidmaxratenew="900"
@@ -439,42 +421,24 @@ function g_compress_video2 {
     g_audio_disposition="$g_audio_disposition -disposition:a:$idx 0"
   fi
 
-  # check for pv
-  local g_pv="cat"
-  command -v pv >/dev/null 2>&1 && g_pv="pv -petb"
 
   # Stage 1: Encode video to H.265 via docker pipe, output directly to MKV
-  echo "${g_pv} \"${g_viddone}-streamable\"| ${sshstream} 'cat | docker run -i --rm linuxserver/ffmpeg:7.1-cli-ls9 -loglevel warning -stats -i pipe: -map_metadata -1 -map_chapters -1 -map_metadata:s -1 -fflags +bitexact -empty_hdlr_name 1 -map $g_vidstream $g_map_audio -filter:v \"${g_vidscale}\" -c:v libx265 -crf 25 -x265-params \"vbv-maxrate=${g_vidmaxratenew}:vbv-bufsize=$(( g_vidmaxratenew * 3 / 2 )):aq-mode=3:no-sao=1:deblock=-1%3A-1:rd=4:subme=7:merange=64:log-level=error:no-info=1\" -pix_fmt yuv420p10le -max_muxing_queue_size 9999 $g_audio_codec_opts $g_audio_metadata $g_audio_disposition -threads 1 -f matroska pipe:' >\"$g_viddone-raw\"" >"$g_tmp"/cmd
+  echo "cat \"${g_viddone}-streamable\"| ${sshstream} 'cat | docker run -i --rm linuxserver/ffmpeg:7.1-cli-ls9 -loglevel warning -stats -i pipe: -map_metadata -1 -map_chapters -1 -map_metadata:s -1 -fflags +bitexact -empty_hdlr_name 1 -map $g_vidstream $g_map_audio -filter:v \"${g_vidscale}\" -c:v libx265 -crf 25 -x265-params \"vbv-maxrate=${g_vidmaxratenew}:vbv-bufsize=$(( g_vidmaxratenew * 3 / 2 )):aq-mode=3:no-sao=1:deblock=-1%3A-1:rd=4:subme=7:merange=64:log-level=error:no-info=1\" -pix_fmt yuv420p10le -max_muxing_queue_size 9999 $g_audio_codec_opts $g_audio_metadata $g_audio_disposition -threads 1 -f matroska pipe:' >\"$g_viddone-raw\"" >"$g_tmp"/cmd
   # fix duration/timestamps and subtitles
   if [ -n "$g_map_orig_subs" ]
   then
-    echo "ffmpeg -loglevel warning -stats -i \"${g_viddone}-raw\" -i \"$g_vid\" -map 0:v -map 0:a $g_map_orig_subs -map_chapters -1 -map_metadata -1 -map_metadata:s -1 -fflags +bitexact -empty_hdlr_name 1 -avoid_negative_ts make_zero $g_audio_metadata $g_audio_disposition $g_sub_metadata -c:v copy -c:a copy -c:s copy -f matroska -max_muxing_queue_size 9999 -y \"$g_viddone\" && rm -f \"${g_viddone}-raw\"" >>"$g_tmp"/cmd
+    echo "ffmpeg -nostdin -loglevel warning -stats -i \"${g_viddone}-raw\" -i \"$g_vid\" -map 0:v -map 0:a $g_map_orig_subs -map_chapters -1 -map_metadata -1 -map_metadata:s -1 -fflags +bitexact -empty_hdlr_name 1 -avoid_negative_ts make_zero $g_audio_metadata $g_audio_disposition $g_sub_metadata -c:v copy -c:a copy -c:s copy -f matroska -max_muxing_queue_size 9999 -y \"$g_viddone\" && rm -f \"${g_viddone}-raw\"" >>"$g_tmp"/cmd
   else
-    echo "ffmpeg -loglevel warning -stats -i \"${g_viddone}-raw\" -map 0:v -map 0:a -map_chapters -1 -map_metadata -1 -map_metadata:s -1 -fflags +bitexact -empty_hdlr_name 1 -avoid_negative_ts make_zero $g_audio_metadata $g_audio_disposition -c:v copy -c:a copy -f matroska -max_muxing_queue_size 9999 -y \"$g_viddone\" && rm -f \"${g_viddone}-raw\"" >>"$g_tmp"/cmd
+    echo "ffmpeg -nostdin -loglevel warning -stats -i \"${g_viddone}-raw\" -map 0:v -map 0:a -map_chapters -1 -map_metadata -1 -map_metadata:s -1 -fflags +bitexact -empty_hdlr_name 1 -avoid_negative_ts make_zero $g_audio_metadata $g_audio_disposition -c:v copy -c:a copy -f matroska -max_muxing_queue_size 9999 -y \"$g_viddone\" && rm -f \"${g_viddone}-raw\"" >>"$g_tmp"/cmd
   fi
 
   g_echo "Start encoding:"
-  cat "$g_tmp"/cmd
-  sh "$g_tmp"/cmd
-
-  ## Verify encoding succeeded: output file must exist and be > 10MB; retry up to 3 times
-  #local g_try=1
-  #while ! [ -f "$g_viddone" ] || [ "$(stat -c%s "$g_viddone" 2>/dev/null || echo 0)" -lt 10485760 ]
-  #do
-  #  g_echo_warn "Encoding failed for $g_vid (attempt $g_try/3)"
-  #  sleep $g_wait
-  #  cat $g_tmp/cmd
-  #  sh $g_tmp/cmd
-  #  g_try=$((g_try+1))
-  #  [ "$g_try" -gt 3 ] && break
-  #done
-#
-#  if ! [ -f "$g_viddone" ] || [ "$(stat -c%s "$g_viddone" 2>/dev/null || echo 0)" -lt 10485760 ]
-#  then
-#    g_echo_warn "Encoding ultimately failed for $g_vid after 3 attempts - keeping original"
-#    g_tmp_cleanup
-#    return 1
-#  fi
+  if [ -e /dev/tty ]
+  then
+    sh -x "$g_tmp"/cmd 2>/dev/tty
+  else
+    sh -x "$g_tmp"/cmd
+  fi
 
   # Helper: output only valid if HEVC video, HE-AAC audio AND duration matches original within 2s
   function g_out_valid {
@@ -493,8 +457,12 @@ function g_compress_video2 {
   do
     g_echo_warn "Encoding failed or incomplete for $g_vid (attempt $g_try/3)"
     sleep $g_wait
-    cat $g_tmp/cmd
-    sh $g_tmp/cmd
+    if [ -e /dev/tty ]
+    then
+      sh -x "$g_tmp"/cmd 2>/dev/tty
+    else
+      sh -x "$g_tmp"/cmd
+    fi
     g_try=$((g_try+1))
     [ "$g_try" -gt 3 ] && break
   done
@@ -508,97 +476,8 @@ function g_compress_video2 {
 
   g_echo "Encoding finished — $(( $(stat -c%s "$g_viddone" 2>/dev/null) / 1048576 )) MiB"
 
-  # Re-mux: merge subtitle streams from original into the encoded MKV output
-  #local g_audio_metadata_remux=""
-  #local g_audio_disposition_remux="-disposition:a:0 default"
-  #[ -n "$g_audlang_de" ] && g_audio_metadata_remux="-metadata:s:a:0 language=$g_audlang_de"
-  #if [ -n "$g_audlang_en" ] && [ "$g_audstream_en" != "$g_audstream_de" ]
-  #then
-  #  g_audio_metadata_remux="$g_audio_metadata_remux -metadata:s:a:1 language=$g_audlang_en"
-  #  g_audio_disposition_remux="$g_audio_disposition_remux -disposition:a:1 0"
-  #fi
-  #if [ -n "$g_map_orig_subs" ]
-  #then
-  #  g_echo "Re-muxing $g_sub_count subtitle streams from original into MKV output"
-  #  ffmpeg -loglevel warning -stats -i "$g_viddone" -i "$g_vid" \
-  #    -map 0:v -map 0:a $g_map_orig_subs \
-  #    -map_chapters -1 -map_metadata -1 -map_metadata:s -1 -fflags +bitexact -empty_hdlr_name 1 \
-  #    -avoid_negative_ts make_zero \
-  #    $g_audio_metadata_remux \
-  #    $g_audio_disposition_remux \
-  #    $g_sub_metadata \
-  #    -c:v copy -c:a copy -c:s copy \
-  #    -f matroska -max_muxing_queue_size 9999 \
-  #    -y "${g_viddone}-withsubs" < /dev/null 2>&1
-  #  if [ -f "${g_viddone}-withsubs" ]
-  #  then
-  #    mv "${g_viddone}-withsubs" "$g_viddone"
-  #    g_echo "Subtitle re-mux completed successfully"
-  #  else
-  #    g_echo_warn "Subtitle re-mux failed - proceeding without subtitles"
-  #  fi
-  #else
-  #  g_echo "Re-muxing to fix duration and timestamps"
-  #  ffmpeg -loglevel warning -stats -i "$g_viddone" \
-  #    -map 0:v -map 0:a \
-  #    -map_chapters -1 -map_metadata -1 -map_metadata:s -1 -fflags +bitexact -empty_hdlr_name 1 \
-  #    -avoid_negative_ts make_zero \
-  #    $g_audio_metadata_remux \
-  #    $g_audio_disposition_remux \
-  #    -c:v copy -c:a copy \
-  #    -f matroska -max_muxing_queue_size 9999 \
-  #    -y "${g_viddone}-withsubs" < /dev/null 2>&1
-  #  if [ -f "${g_viddone}-withsubs" ]
-  #  then
-  #    mv "${g_viddone}-withsubs" "$g_viddone"
-  #    g_echo "Remux completed successfully"
-  #  else
-  #    g_echo_warn "Remux failed - proceeding with original file"
-  #  fi
-  #fi
-
   # clean metadata
   mkvpropedit "$g_viddone" --tags all: >/dev/null || g_echo_warn "Could not clean tags"
-
-#  # Validate output: HEVC video, HE-AACv2/AC3 audio, duration
-#  if ! ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of csv=p=0 "$g_viddone" 2>/dev/null | grep -q "hevc"
-#  then
-#    g_echo_warn "Video validation failed for $g_vid - not HEVC"
-#    g_tmp_cleanup
-#    return 1
-#  fi
-#
-#  if ! ffprobe "$g_viddone" 2>&1 | egrep -iq "he-aacv2|ac3"
-#  then
-#    g_echo_warn "Audio validation failed for $g_vid - unexpected codec found"
-#    g_tmp_cleanup
-#    return 1
-#  fi
-#
-#  local g_outsize=$(stat -c%s "$g_viddone" 2>/dev/null || echo 0)
-#  if [ "$g_outsize" -lt 10485760 ]
-#  then
-#    g_echo_warn "Output file too small ($g_outsize bytes) - keeping original"
-#    g_tmp_cleanup
-#    return 1
-#  fi
-#
-#  # Validate duration: compressed video must match original within 2 seconds
-#  local g_dur_orig=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$g_vid" 2>/dev/null)
-#  local g_dur_new=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$g_viddone" 2>/dev/null)
-#  if [ -n "$g_dur_orig" ] && [ -n "$g_dur_new" ]
-#  then
-#    local g_dur_diff=$(awk -v a="$g_dur_orig" -v b="$g_dur_new" 'BEGIN { d=a-b; if (d<0) d=-d; printf "%.3f", d }')
-#    if [ "$(awk -v d="$g_dur_diff" 'BEGIN { print (d > 2) ? 1 : 0 }')" -eq 1 ]
-#    then
-#      g_echo_warn "Duration mismatch for $g_vid (original ${g_dur_orig}s vs new ${g_dur_new}s) - keeping original"
-#      g_tmp_cleanup
-#      return 1
-#    fi
-#    g_echo "Duration check OK: ${g_dur_orig}s vs ${g_dur_new}s"
-#  else
-#    g_echo_warn "Could not determine duration for validation"
-#  fi
 
   # Validate output: HEVC video, HE-AACv2/AC3 audio, size, duration
   if ! g_out_valid
