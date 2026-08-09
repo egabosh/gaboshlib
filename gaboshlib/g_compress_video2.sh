@@ -440,7 +440,7 @@ function g_compress_video2 {
   fi
 
   #local x265_params="vbv-maxrate=${g_vidmaxratenew}:vbv-bufsize=$(( g_vidmaxratenew * 3 / 2 )):aq-mode=3:aq-strength=1.5:no-sao=1:deblock=-1:-1:rd=6:subme=5:ref=6:bframes=4:b-adapt=2:merange=64:rc-lookahead=40:log-level=error:no-info=1"  
-  local x265_params="vbv-maxrate=${g_vidmaxratenew}:vbv-bufsize=$(( g_vidmaxratenew * 3 / 2 )):aq-mode=3:aq-strength=1.5:no-sao=1:deblock=-1%3A-1:rd=6:subme=5:ref=6:bframes=4:b-adapt=2:merange=64:rc-lookahead=40:tu-inter-depth=2:tu-intra-depth=2:cbqpoffs=-2:crqpoffs=-2:log-level=error:no-info=1"
+  local x265_params="vbv-maxrate=${g_vidmaxratenew}:vbv-bufsize=$(( g_vidmaxratenew * 3 / 2 )):aq-mode=3:aq-strength=1.8:deblock=-1%3A-1:rd=6:subme=5:ref=6:bframes=6:b-adapt=2:merange=64:rc-lookahead=60:tu-inter-depth=2:tu-intra-depth=2:cbqpoffs=-2:crqpoffs=-2:psy-rd=2.0:psy-rdoq=2.0:log-level=error:no-info=1"
 
   # Stage 1: Encode video to H.265 via docker pipe, output directly to MKV
   #linuxserver/ffmpeg:7.1-cli-ls9 
