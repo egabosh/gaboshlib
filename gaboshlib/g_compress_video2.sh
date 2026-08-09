@@ -440,10 +440,11 @@ function g_compress_video2 {
   fi
 
   #local x265_params="vbv-maxrate=${g_vidmaxratenew}:vbv-bufsize=$(( g_vidmaxratenew * 3 / 2 )):aq-mode=3:aq-strength=1.5:no-sao=1:deblock=-1:-1:rd=6:subme=5:ref=6:bframes=4:b-adapt=2:merange=64:rc-lookahead=40:log-level=error:no-info=1"  
-  local x265_params="vbv-maxrate=${g_vidmaxratenew}:vbv-bufsize=$(( g_vidmaxratenew * 3 / 2 )):aq-mode=3:aq-strength=1.5:no-sao=1:deblock=-1:-1:rd=6:subme=5:ref=6:bframes=4:b-adapt=2:merange=64:me=umh:rc-lookahead=40:tu-inter-depth=2:tu-intra-depth=2:cbqpoffs=-2:crqpoffs=-2:log-level=error:no-info=1"
+  local x265_params="vbv-maxrate=${g_vidmaxratenew}:vbv-bufsize=$(( g_vidmaxratenew * 3 / 2 )):aq-mode=3:aq-strength=1.5:no-sao=1:deblock=-1%3A-1:rd=6:subme=5:ref=6:bframes=4:b-adapt=2:merange=64:rc-lookahead=40:tu-inter-depth=2:tu-intra-depth=2:cbqpoffs=-2:crqpoffs=-2:log-level=error:no-info=1"
 
   # Stage 1: Encode video to H.265 via docker pipe, output directly to MKV
-  echo "cat \"${g_viddone}-streamable\"| ${sshstream} 'cat | docker run -i --rm linuxserver/ffmpeg:7.1-cli-ls9 -loglevel warning -stats -i pipe: -map_metadata -1 -map_chapters -1 -map_metadata:s -1 -fflags +bitexact -empty_hdlr_name 1 -map $g_vidstream $g_map_audio -filter:v \"${g_vidscale}\" -c:v libx265 -crf 25 -x265-params \"${x265_params}\" -pix_fmt yuv420p10le -max_muxing_queue_size 9999 $g_audio_codec_opts $g_audio_metadata $g_audio_disposition -threads 1 -f matroska pipe:' >\"$g_viddone-raw\"" >"$g_tmp"/cmd
+  #linuxserver/ffmpeg:7.1-cli-ls9 
+  echo "cat \"${g_viddone}-streamable\"| ${sshstream} 'cat | docker run -i --rm linuxserver/ffmpeg:latest -loglevel warning -stats -i pipe: -map_metadata -1 -map_chapters -1 -map_metadata:s -1 -fflags +bitexact -empty_hdlr_name 1 -map $g_vidstream $g_map_audio -filter:v \"${g_vidscale}\" -c:v libx265 -crf 24.6 -x265-params \"${x265_params}\" -pix_fmt yuv420p10le -max_muxing_queue_size 9999 $g_audio_codec_opts $g_audio_metadata $g_audio_disposition -threads 1 -f matroska pipe:' >\"$g_viddone-raw\"" >"$g_tmp"/cmd
 
   # fix duration/timestamps and subtitles
   if [ -n "$g_map_orig_subs" ]
