@@ -87,7 +87,7 @@ function g_compress_video2 {
   g_tmp_cleanup() {
     rm -f /tmp/"${g_vid_md5}".g_progressing 2>/dev/null
     rm -f "$g_tmp"/vidinfo "$g_tmp"/vidinfo_original "$g_tmp"/vidinfo51 "$g_tmp"/cmd
-    rm -f "$g_viddone" "${g_viddone}-streamable" "${g_viddone}-withsubs"
+    rm -f "$g_viddone" "${g_viddone}-streamable" "${g_viddone}-withsubs" "${g_viddone}-raw"
     trap - INT TERM ERR
   }
 
@@ -439,8 +439,19 @@ function g_compress_video2 {
     g_audio_disposition="$g_audio_disposition -disposition:a:$idx 0"
   fi
 
+  # check for pv
+  local g_pv="cat"
+  command -v pv >/dev/null 2>&1 && g_pv="pv -petb"
+
   # Stage 1: Encode video to H.265 via docker pipe, output directly to MKV
-  echo "cat \"${g_viddone}-streamable\"| $sshstream 'cat | docker run -i --rm linuxserver/ffmpeg:7.1-cli-ls9 -loglevel warning -stats -i pipe: -map_metadata -1 -map_chapters -1 -map_metadata:s -1 -fflags +bitexact -empty_hdlr_name 1 -map $g_vidstream $g_map_audio -filter:v \"${g_vidscale}\" -c:v libx265 -crf 25 -x265-params \"vbv-maxrate=${g_vidmaxratenew}:vbv-bufsize=$(( g_vidmaxratenew * 3 / 2 )):aq-mode=3:no-sao=1:deblock=-1%3A-1:rd=4:subme=7:merange=64:log-level=error:no-info=1\" -pix_fmt yuv420p10le -max_muxing_queue_size 9999 $g_audio_codec_opts $g_audio_metadata $g_audio_disposition -threads 1 -f matroska pipe:' >\"$g_viddone\"" >"$g_tmp"/cmd
+  echo "cat \"${g_viddone}-streamable\"| ${sshstream} '${g_pv} | docker run -i --rm linuxserver/ffmpeg:7.1-cli-ls9 -loglevel warning -stats -i pipe: -map_metadata -1 -map_chapters -1 -map_metadata:s -1 -fflags +bitexact -empty_hdlr_name 1 -map $g_vidstream $g_map_audio -filter:v \"${g_vidscale}\" -c:v libx265 -crf 25 -x265-params \"vbv-maxrate=${g_vidmaxratenew}:vbv-bufsize=$(( g_vidmaxratenew * 3 / 2 )):aq-mode=3:no-sao=1:deblock=-1%3A-1:rd=4:subme=7:merange=64:log-level=error:no-info=1\" -pix_fmt yuv420p10le -max_muxing_queue_size 9999 $g_audio_codec_opts $g_audio_metadata $g_audio_disposition -threads 1 -f matroska pipe:' >\"$g_viddone-raw\"" >"$g_tmp"/cmd
+  # fix duration/timestamps and subtitles
+  if [ -n "$g_map_orig_subs" ]
+  then
+    echo "ffmpeg -loglevel warning -stats -i \"${g_viddone}-raw\" -i \"$g_vid\" -map 0:v -map 0:a $g_map_orig_subs -map_chapters -1 -map_metadata -1 -map_metadata:s -1 -fflags +bitexact -empty_hdlr_name 1 -avoid_negative_ts make_zero $g_audio_metadata $g_audio_disposition $g_sub_metadata -c:v copy -c:a copy -c:s copy -f matroska -max_muxing_queue_size 9999 -y \"$g_viddone\" && rm -f \"${g_viddone}-raw\"" >>"$g_tmp"/cmd
+  else
+    echo "ffmpeg -loglevel warning -stats -i \"${g_viddone}-raw\" -map 0:v -map 0:a -map_chapters -1 -map_metadata -1 -map_metadata:s -1 -fflags +bitexact -empty_hdlr_name 1 -avoid_negative_ts make_zero $g_audio_metadata $g_audio_disposition -c:v copy -c:a copy -f matroska -max_muxing_queue_size 9999 -y \"$g_viddone\" && rm -f \"${g_viddone}-raw\"" >>"$g_tmp"/cmd
+  fi
 
   g_echo "Start encoding:"
   cat "$g_tmp"/cmd
@@ -498,53 +509,53 @@ function g_compress_video2 {
   g_echo "Encoding finished — $(( $(stat -c%s "$g_viddone" 2>/dev/null) / 1048576 )) MiB"
 
   # Re-mux: merge subtitle streams from original into the encoded MKV output
-  local g_audio_metadata_remux=""
-  local g_audio_disposition_remux="-disposition:a:0 default"
-  [ -n "$g_audlang_de" ] && g_audio_metadata_remux="-metadata:s:a:0 language=$g_audlang_de"
-  if [ -n "$g_audlang_en" ] && [ "$g_audstream_en" != "$g_audstream_de" ]
-  then
-    g_audio_metadata_remux="$g_audio_metadata_remux -metadata:s:a:1 language=$g_audlang_en"
-    g_audio_disposition_remux="$g_audio_disposition_remux -disposition:a:1 0"
-  fi
-  if [ -n "$g_map_orig_subs" ]
-  then
-    g_echo "Re-muxing $g_sub_count subtitle streams from original into MKV output"
-    ffmpeg -loglevel warning -stats -i "$g_viddone" -i "$g_vid" \
-      -map 0:v -map 0:a $g_map_orig_subs \
-      -map_chapters -1 -map_metadata -1 -map_metadata:s -1 -fflags +bitexact -empty_hdlr_name 1 \
-      -avoid_negative_ts make_zero \
-      $g_audio_metadata_remux \
-      $g_audio_disposition_remux \
-      $g_sub_metadata \
-      -c:v copy -c:a copy -c:s copy \
-      -f matroska -max_muxing_queue_size 9999 \
-      -y "${g_viddone}-withsubs" < /dev/null 2>&1
-    if [ -f "${g_viddone}-withsubs" ]
-    then
-      mv "${g_viddone}-withsubs" "$g_viddone"
-      g_echo "Subtitle re-mux completed successfully"
-    else
-      g_echo_warn "Subtitle re-mux failed - proceeding without subtitles"
-    fi
-  else
-    g_echo "Re-muxing to fix duration and timestamps"
-    ffmpeg -loglevel warning -stats -i "$g_viddone" \
-      -map 0:v -map 0:a \
-      -map_chapters -1 -map_metadata -1 -map_metadata:s -1 -fflags +bitexact -empty_hdlr_name 1 \
-      -avoid_negative_ts make_zero \
-      $g_audio_metadata_remux \
-      $g_audio_disposition_remux \
-      -c:v copy -c:a copy \
-      -f matroska -max_muxing_queue_size 9999 \
-      -y "${g_viddone}-withsubs" < /dev/null 2>&1
-    if [ -f "${g_viddone}-withsubs" ]
-    then
-      mv "${g_viddone}-withsubs" "$g_viddone"
-      g_echo "Remux completed successfully"
-    else
-      g_echo_warn "Remux failed - proceeding with original file"
-    fi
-  fi
+  #local g_audio_metadata_remux=""
+  #local g_audio_disposition_remux="-disposition:a:0 default"
+  #[ -n "$g_audlang_de" ] && g_audio_metadata_remux="-metadata:s:a:0 language=$g_audlang_de"
+  #if [ -n "$g_audlang_en" ] && [ "$g_audstream_en" != "$g_audstream_de" ]
+  #then
+  #  g_audio_metadata_remux="$g_audio_metadata_remux -metadata:s:a:1 language=$g_audlang_en"
+  #  g_audio_disposition_remux="$g_audio_disposition_remux -disposition:a:1 0"
+  #fi
+  #if [ -n "$g_map_orig_subs" ]
+  #then
+  #  g_echo "Re-muxing $g_sub_count subtitle streams from original into MKV output"
+  #  ffmpeg -loglevel warning -stats -i "$g_viddone" -i "$g_vid" \
+  #    -map 0:v -map 0:a $g_map_orig_subs \
+  #    -map_chapters -1 -map_metadata -1 -map_metadata:s -1 -fflags +bitexact -empty_hdlr_name 1 \
+  #    -avoid_negative_ts make_zero \
+  #    $g_audio_metadata_remux \
+  #    $g_audio_disposition_remux \
+  #    $g_sub_metadata \
+  #    -c:v copy -c:a copy -c:s copy \
+  #    -f matroska -max_muxing_queue_size 9999 \
+  #    -y "${g_viddone}-withsubs" < /dev/null 2>&1
+  #  if [ -f "${g_viddone}-withsubs" ]
+  #  then
+  #    mv "${g_viddone}-withsubs" "$g_viddone"
+  #    g_echo "Subtitle re-mux completed successfully"
+  #  else
+  #    g_echo_warn "Subtitle re-mux failed - proceeding without subtitles"
+  #  fi
+  #else
+  #  g_echo "Re-muxing to fix duration and timestamps"
+  #  ffmpeg -loglevel warning -stats -i "$g_viddone" \
+  #    -map 0:v -map 0:a \
+  #    -map_chapters -1 -map_metadata -1 -map_metadata:s -1 -fflags +bitexact -empty_hdlr_name 1 \
+  #    -avoid_negative_ts make_zero \
+  #    $g_audio_metadata_remux \
+  #    $g_audio_disposition_remux \
+  #    -c:v copy -c:a copy \
+  #    -f matroska -max_muxing_queue_size 9999 \
+  #    -y "${g_viddone}-withsubs" < /dev/null 2>&1
+  #  if [ -f "${g_viddone}-withsubs" ]
+  #  then
+  #    mv "${g_viddone}-withsubs" "$g_viddone"
+  #    g_echo "Remux completed successfully"
+  #  else
+  #    g_echo_warn "Remux failed - proceeding with original file"
+  #  fi
+  #fi
 
   # clean metadata
   mkvpropedit "$g_viddone" --tags all: >/dev/null || g_echo_warn "Could not clean tags"
