@@ -236,6 +236,14 @@ function g_compress_video2 {
     fi
   done < <(cat "$g_tmp"/vidinfo | grep Stream | grep ": Audio: ")
 
+  # Fallback: if no German audio found but English exists, use English as the (default) track
+  if [ -z "$g_audstream_de" ] && [ -n "$g_audstream_en" ]
+  then
+    g_audstream_de="$g_audstream_en"
+    g_audlang_de="$g_audlang_en"
+    g_dechannels=$g_enchannels
+  fi
+
   # Fallback: if no DE or EN audio found, use the first audio stream available
   if [ -z "$g_audstream_de" ] && [ -z "$g_audstream_en" ]
   then
@@ -253,6 +261,16 @@ function g_compress_video2 {
      else
        g_audlang_de="ger"
      fi
+     # Detect channel count so the track is not encoded as mono
+     local channels=0
+     echo "$g_audline" | egrep -q '7\.1' && channels=8
+     echo "$g_audline" | egrep -q '6\.1' && channels=7
+     echo "$g_audline" | egrep -q '5\.1' && channels=6
+     echo "$g_audline" | egrep -q '5\.0' && channels=5
+     echo "$g_audline" | egrep -q '4\.0|3\.1' && channels=4
+     echo "$g_audline" | egrep -q 'stereo' && [ "$channels" -eq 0 ] && channels=2
+     echo "$g_audline" | egrep -q 'mono' && [ "$channels" -eq 0 ] && channels=1
+     g_dechannels=$channels
    fi
   fi
 
@@ -362,7 +380,7 @@ function g_compress_video2 {
       g_sh=$(( g_vidheight * 1000 / g_factor / 2 * 2 ))
     fi
   fi
-  local g_vidscale="scale=${g_sw}:${g_sh}"
+  local g_vidscale="scale=${g_sw}:${g_sh}:flags=lanczos"
   g_echo "Target: ${g_sw}x${g_sh} (max 1080p, no upscaling) @ max ${g_vidmaxratenew} kb/s — CRF 25, 10-bit"
 
   # Build per-stream audio codec options based on channel count
@@ -421,9 +439,11 @@ function g_compress_video2 {
     g_audio_disposition="$g_audio_disposition -disposition:a:$idx 0"
   fi
 
+  local x265_params="vbv-maxrate=${g_vidmaxratenew}:vbv-bufsize=$(( g_vidmaxratenew * 3 / 2 )):aq-mode=3:aq-strength=1.5:no-sao=1:deblock=-1:-1:rd=6:subme=5:ref=6:bframes=4:b-adapt=2:merange=64:rc-lookahead=40:log-level=error:no-info=1"
 
   # Stage 1: Encode video to H.265 via docker pipe, output directly to MKV
-  echo "cat \"${g_viddone}-streamable\"| ${sshstream} 'cat | docker run -i --rm linuxserver/ffmpeg:7.1-cli-ls9 -loglevel warning -stats -i pipe: -map_metadata -1 -map_chapters -1 -map_metadata:s -1 -fflags +bitexact -empty_hdlr_name 1 -map $g_vidstream $g_map_audio -filter:v \"${g_vidscale}\" -c:v libx265 -crf 25 -x265-params \"vbv-maxrate=${g_vidmaxratenew}:vbv-bufsize=$(( g_vidmaxratenew * 3 / 2 )):aq-mode=3:no-sao=1:deblock=-1%3A-1:rd=4:subme=7:merange=64:log-level=error:no-info=1\" -pix_fmt yuv420p10le -max_muxing_queue_size 9999 $g_audio_codec_opts $g_audio_metadata $g_audio_disposition -threads 1 -f matroska pipe:' >\"$g_viddone-raw\"" >"$g_tmp"/cmd
+  echo "cat \"${g_viddone}-streamable\"| ${sshstream} 'cat | docker run -i --rm linuxserver/ffmpeg:7.1-cli-ls9 -loglevel warning -stats -i pipe: -map_metadata -1 -map_chapters -1 -map_metadata:s -1 -fflags +bitexact -empty_hdlr_name 1 -map $g_vidstream $g_map_audio -filter:v \"${g_vidscale}\" -c:v libx265 -crf 25 -x265-params \"${x265_params}\" -pix_fmt yuv420p10le -max_muxing_queue_size 9999 $g_audio_codec_opts $g_audio_metadata $g_audio_disposition -threads 1 -f matroska pipe:' >\"$g_viddone-raw\"" >"$g_tmp"/cmd
+
   # fix duration/timestamps and subtitles
   if [ -n "$g_map_orig_subs" ]
   then
