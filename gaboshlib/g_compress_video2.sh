@@ -63,20 +63,31 @@ function g_compress_video2 {
   local g_vid=""
   local g_remotedockerffmpeg=""
   local g_stereo=false
+  local g_threads=1
+  local g_remotedockerffmpegport=22
   local OPTIND=1
-  while getopts "f:r:s" opt
+  while getopts "f:r:st:p:" opt
   do
     case "$opt" in
       f) g_vid="$OPTARG" ;;
       r) g_remotedockerffmpeg="$OPTARG" ;;
       s) g_stereo=true ;;
-      *) g_echo_warn "Usage: $0 -f <file> [-r <host>] [-s]"; return 1 ;;
+      t) g_threads=$OPTARG ;;
+      p) g_remotedockerffmpegport="$OPTARG" ;;
+      *) g_echo_warn "Usage: $0 -f <file> [-r <host>] [-r <port>]  [-s] [-t <threads>]"; return 1 ;;
     esac
   done
 
   if [ -z "$g_vid" ]
   then
     g_echo_warn "Missing required option: -f <file>"
+    return 1
+  fi
+
+  # Validate thread count (positive integer, 0 = auto/all cores)
+  if ! [[ "$g_threads" =~ ^[0-9]+$ ]]
+  then
+    g_echo_error "Invalid thread count '$g_threads' - must be a number (0 = all cores)"
     return 1
   fi
 
@@ -133,14 +144,14 @@ function g_compress_video2 {
    sleep 2
   done
 
-  # Create checksum for duplicate-processing detection
+  ## Create checksum for duplicate-processing detection
   g_echo "Please wait... Creating checksum for $g_vid."
   local g_vid_md5=$(md5sum "$g_vid" | cut -d" " -f1)
   if [ -e /tmp/"$g_vid_md5".g_progressing ]
   then
-   g_echo "File $g_vid seems to already be compressing"
-   trap - INT TERM ERR
-   return 1
+    g_echo "File $g_vid seems to already be compressing"
+    trap - INT TERM ERR
+    return 1
   fi
   echo $$ > /tmp/"$g_vid_md5".g_progressing
 
@@ -380,6 +391,7 @@ function g_compress_video2 {
       g_sh=$(( g_vidheight * 1000 / g_factor / 2 * 2 ))
     fi
   fi
+  #local g_vidscale="scale=${g_sw}:${g_sh}"
   local g_vidscale="scale=${g_sw}:${g_sh}:flags=lanczos"
   g_echo "Target: ${g_sw}x${g_sh} (max 1080p, no upscaling) @ max ${g_vidmaxratenew} kb/s — CRF 25, 10-bit"
 
@@ -415,7 +427,7 @@ function g_compress_video2 {
   fi
 
   # Select execution mode: local (sh -c) or remote docker via SSH
-  local sshstream="ssh -p33 -o ServerAliveInterval=30 -o ServerAliveCountMax=6 -o ConnectTimeout=15 -o TCPKeepAlive=yes -o BatchMode=yes ${g_remotedockerffmpeg}"
+  local sshstream="ssh -p${g_remotedockerffmpegport} -o ServerAliveInterval=30 -o ServerAliveCountMax=6 -o ConnectTimeout=15 -o TCPKeepAlive=yes -o BatchMode=yes ${g_remotedockerffmpeg}"
   [ -z ${g_remotedockerffmpeg} ] && sshstream="sh -c"
   g_echo "Encoding video ($g_vid) on ${g_remotedockerffmpeg:-local}"
 
@@ -439,12 +451,14 @@ function g_compress_video2 {
     g_audio_disposition="$g_audio_disposition -disposition:a:$idx 0"
   fi
 
-  local x265_params="vbv-maxrate=${g_vidmaxratenew}:vbv-bufsize=$(( g_vidmaxratenew * 3 / 2 )):aq-mode=3:aq-strength=1.5:no-sao=1:deblock=-1%3A-1:rd=6:subme=5:ref=6:bframes=4:b-adapt=2:merange=64:rc-lookahead=40:log-level=error:no-info=1"  
+  local x265_params="vbv-maxrate=${g_vidmaxratenew}:vbv-bufsize=$(( g_vidmaxratenew * 3 / 2 )):aq-mode=3:no-sao=1:deblock=-1%3A-1:rd=4:subme=7:merange=64:log-level=error:no-info=1"
+
+  #local x265_params="vbv-maxrate=${g_vidmaxratenew}:vbv-bufsize=$(( g_vidmaxratenew * 3 / 2 )):aq-mode=3:aq-strength=1.5:no-sao=1:deblock=-1%3A-1:rd=6:subme=5:ref=6:bframes=4:b-adapt=2:merange=64:rc-lookahead=40:log-level=error:no-info=1"  
   #local x265_params="vbv-maxrate=${g_vidmaxratenew}:vbv-bufsize=$(( g_vidmaxratenew * 3 / 2 )):aq-mode=3:aq-strength=1.8:deblock=-1%3A-1:rd=6:subme=5:ref=6:bframes=6:b-adapt=2:merange=64:rc-lookahead=60:tu-inter-depth=2:tu-intra-depth=2:cbqpoffs=-2:crqpoffs=-2:psy-rd=2.0:psy-rdoq=2.0:log-level=error:no-info=1"
 
   # Stage 1: Encode video to H.265 via docker pipe, output directly to MKV
   #linuxserver/ffmpeg:7.1-cli-ls9 
-  echo "cat \"${g_viddone}-streamable\"| ${sshstream} 'cat | docker run -i --rm linuxserver/ffmpeg:latest -loglevel warning -stats -i pipe: -map_metadata -1 -map_chapters -1 -map_metadata:s -1 -fflags +bitexact -empty_hdlr_name 1 -map $g_vidstream $g_map_audio -filter:v \"${g_vidscale}\" -c:v libx265 -crf 25 -x265-params \"${x265_params}\" -pix_fmt yuv420p10le -max_muxing_queue_size 9999 $g_audio_codec_opts $g_audio_metadata $g_audio_disposition -threads 1 -f matroska pipe:' >\"$g_viddone-raw\"" >"$g_tmp"/cmd
+  echo "cat \"${g_viddone}-streamable\"| ${sshstream} 'cat | docker run -i --rm linuxserver/ffmpeg:7.1-cli-ls9 -loglevel warning -stats -i pipe: -map_metadata -1 -map_chapters -1 -map_metadata:s -1 -fflags +bitexact -empty_hdlr_name 1 -map $g_vidstream $g_map_audio -filter:v \"${g_vidscale}\" -c:v libx265 -crf 25 -x265-params \"${x265_params}\" -pix_fmt yuv420p10le -max_muxing_queue_size 9999 $g_audio_codec_opts $g_audio_metadata $g_audio_disposition -threads $g_threads -f matroska pipe:' >\"$g_viddone-raw\"" >"$g_tmp"/cmd
 
   # fix duration/timestamps and subtitles
   if [ -n "$g_map_orig_subs" ]
