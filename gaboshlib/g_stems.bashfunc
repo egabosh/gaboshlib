@@ -1,0 +1,141 @@
+#!/bin/bash
+# gaboshlib function: separate an audio file into stems (vocals, drums, bass, ...)
+# over the network using the Demucs service on ai.lan (FOSS, CPU).
+# Talks directly to the /v1/audio/separation proxy via HTTP and unzips the
+# resulting stems into an output directory.
+# Requires a shared AI Bearer key (same as llm/stt/tts proxies on ai.lan) in
+# /etc/ai-api-key (format: LLAMA_API_KEY=<hex>), optional.
+
+function g_stems {
+
+ # default settings
+ local g_st_input=""
+ local g_st_out=""
+ local g_st_model="htdemucs"
+ local g_st_twostems=""
+ local g_st_host="localhost"
+ local g_st_port="8085"
+ local g_st_key=""
+ local g_st_keyfile="/etc/ai-api-key"
+ local g_st_max=3600
+
+ function f_stems_usage {
+  cat <<EOF
+Usage: $(basename "$0") -i <input> [-o <outdir>] [OPTIONS]
+
+Separate an audio file into stems (vocals, drums, bass, ...) using Demucs.
+
+Arguments:
+  -i FILE     Input audio file (mp3, wav, flac, m4a, ogg) (required)
+  -o DIR      Output directory (default: <input>_stems in the input dir)
+  -m MODEL    Demucs model (default: htdemucs)
+              htdemucs | htdemucs_ft | htdemucs_6s | htdemucs_ft_6s | mdx_extra
+  -t STEM     Split only into STEM/no_STEM (e.g. vocals, drums, bass, guitar)
+  -h HOST     Demucs server host or full URL (default: localhost)
+              Plain host -> http://host:PORT ; pass https://... to use it as-is
+  -p PORT     Demucs server port (default: 8085, ignored for full URLs in -h)
+  -k KEY      API key (optional; default: read /etc/ai-api-key if present)
+  -K KEYFILE  Key file with LLAMA_API_KEY=<key> line (default: /etc/ai-api-key)
+  -m MAX      Maximum upload time in seconds (default: 3600)
+  --help      Show this help
+
+Examples:
+  g_stems -i song.mp3
+  g_stems -i song.mp3 -o mussik/ -m htdemucs_6s
+  g_stems -i song.mp3 -t vocals -o vox/
+  g_stems -i song.mp3 -h ai.lan -p 8085 -k "$AI_KEY"
+EOF
+  return 0
+ }
+
+ # parse options
+ while [[ $# -gt 0 ]]
+ do
+  case "$1" in
+   -i) g_st_input="$2"; shift 2 ;;
+   -o) g_st_out="$2"; shift 2 ;;
+   -m) g_st_model="$2"; shift 2 ;;
+   -t) g_st_twostems="$2"; shift 2 ;;
+   -h) g_st_host="$2"; shift 2 ;;
+   -p) g_st_port="$2"; shift 2 ;;
+   -k) g_st_key="$2"; shift 2 ;;
+   -K) g_st_keyfile="$2"; shift 2 ;;
+   -M) g_st_max="$2"; shift 2 ;;
+   --help|-help) f_stems_usage; return 0 ;;
+   -*) g_echo_error "Unknown option: $1"; f_stems_usage; return 1 ;;
+   *) g_echo_error "Unexpected argument: $1"; f_stems_usage; return 1 ;;
+  esac
+ done
+
+ # require an existing audio file
+ if [[ -z "$g_st_input" ]]
+ then
+  g_echo_error "No input file specified."
+  f_stems_usage
+  return 1
+ fi
+ if [[ ! -f "$g_st_input" ]]
+ then
+  g_echo_error "Input file not found: $g_st_input"
+  return 1
+ fi
+
+ # shared AI Bearer key: explicit -k wins, else read keyfile if present
+ if [[ -z "$g_st_key" ]] && [[ -f "$g_st_keyfile" ]]
+ then
+  g_st_key=$(grep -E '^LLAMA_API_KEY=' "$g_st_keyfile" | cut -d= -f2)
+ fi
+ if [[ -z "$g_st_key" ]]
+ then
+  g_echo_warn "No API key found ($g_st_keyfile), the server will reject the request."
+ fi
+
+ # default output directory: <input>_stems next to the input file
+ if [[ -z "$g_st_out" ]]
+ then
+  g_st_out="${g_st_input%.*}_stems"
+ fi
+
+ # build the base URL; full URLs (https://...) in -h are used as-is
+ if [[ "$g_st_host" == *://* ]]
+ then
+  g_st_url="${g_st_host%/}"
+ else
+  g_st_url="http://${g_st_host}:${g_st_port}"
+ fi
+
+ if ! command -v unzip >/dev/null 2>&1
+ then
+  g_echo_error "unzip not found, install it first."
+  return 1
+ fi
+
+ # download the zip of stems into the gaboshlib temp dir (-f fails on HTTP errors)
+ local g_st_zip="$g_tmp/stems_$$.zip"
+ mkdir -p "$g_tmp"
+ g_echo "Separating $g_st_input (model: $g_st_model${g_st_twostems:+ two-stems: $g_st_twostems})..."
+ if ! curl -s -f --max-time "$g_st_max" -X POST "${g_st_url}/v1/audio/separation?format=zip" \
+  ${g_st_key:+-H "Authorization: Bearer $g_st_key"} \
+  -F "file=@${g_st_input}" \
+  -F "model=${g_st_model}" \
+  ${g_st_twostems:+-F "two_stems=${g_st_twostems}"} \
+  -o "$g_st_zip"
+ then
+  g_echo_error "Separation failed."
+  return 1
+ fi
+
+ # unpack the stems into the output directory
+ mkdir -p "$g_st_out"
+ if ! unzip -o -q "$g_st_zip" -d "$g_st_out"
+ then
+  g_echo_error "Failed to unpack stems."
+  return 1
+ fi
+
+ # remove a possibly empty download flag file and list the result
+ rm -f "$g_st_zip"
+ g_echo_ok "Done! Stems in: $g_st_out"
+ ls -lh "$g_st_out"
+ return 0
+}
