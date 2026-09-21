@@ -183,7 +183,8 @@ function g_compress_video2 {
   cat "$g_tmp"/vidinfo
 
   # Move 5.1/6.1/7.1 surround lines to top so channel detection picks them up first
-  cat "$g_tmp"/vidinfo | egrep "5\.1|6\.1|7\.1" >"$g_tmp"/vidinfo51
+  # No match (egrep exit 1) is fine: unless there are surround tracks, keep the stream order
+  cat "$g_tmp"/vidinfo | egrep "5\.1|6\.1|7\.1" >"$g_tmp"/vidinfo51 || true
   cat "$g_tmp"/vidinfo >>"$g_tmp"/vidinfo51
   cat "$g_tmp"/vidinfo51 >"$g_tmp"/vidinfo
 
