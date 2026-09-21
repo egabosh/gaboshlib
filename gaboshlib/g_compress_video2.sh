@@ -473,12 +473,22 @@ function g_compress_video2 {
 
   local x265_params="vbv-maxrate=${g_vidmaxratenew}:vbv-bufsize=$(( g_vidmaxratenew * 3 / 2 )):aq-mode=3:no-sao=1:deblock=-1%3A-1:rd=4:subme=7:merange=64:log-level=error:no-info=1"
 
+  # x265 caps the frame-threads it receives via ffmpeg "-threads" at 16
+  # (X265_MAX_FRAME_THREADS); hand the remaining capacity over as pool-threads
+  # so cores beyond 16 stay busy (0 = auto, leave untouched)
+  local g_frame_threads=$g_threads
+  if [ "$g_threads" -gt 16 ]
+  then
+    g_frame_threads=16
+    x265_params="${x265_params}:pool-threads=${g_threads}"
+  fi
+
   #local x265_params="vbv-maxrate=${g_vidmaxratenew}:vbv-bufsize=$(( g_vidmaxratenew * 3 / 2 )):aq-mode=3:aq-strength=1.5:no-sao=1:deblock=-1%3A-1:rd=6:subme=5:ref=6:bframes=4:b-adapt=2:merange=64:rc-lookahead=40:log-level=error:no-info=1"  
   #local x265_params="vbv-maxrate=${g_vidmaxratenew}:vbv-bufsize=$(( g_vidmaxratenew * 3 / 2 )):aq-mode=3:aq-strength=1.8:deblock=-1%3A-1:rd=6:subme=5:ref=6:bframes=6:b-adapt=2:merange=64:rc-lookahead=60:tu-inter-depth=2:tu-intra-depth=2:cbqpoffs=-2:crqpoffs=-2:psy-rd=2.0:psy-rdoq=2.0:log-level=error:no-info=1"
 
   # Stage 1: Encode video to H.265 via docker pipe, output directly to MKV
   #linuxserver/ffmpeg:7.1-cli-ls9 
-  echo "cat \"${g_viddone}-streamable\"| ${sshstream} 'cat | docker run -i --rm linuxserver/ffmpeg:7.1-cli-ls9 -loglevel warning -stats -i pipe: -map_metadata -1 -map_chapters -1 -map_metadata:s -1 -fflags +bitexact -empty_hdlr_name 1 -map $g_vidstream $g_map_audio -filter:v \"${g_vidscale}\" -c:v libx265 -crf 25 -x265-params \"${x265_params}\" -pix_fmt yuv420p10le -max_muxing_queue_size 9999 $g_audio_codec_opts $g_audio_metadata $g_audio_disposition -threads $g_threads -f matroska pipe:' >\"$g_viddone-raw\"" >"$g_tmp"/cmd
+  echo "cat \"${g_viddone}-streamable\"| ${sshstream} 'cat | docker run -i --rm linuxserver/ffmpeg:7.1-cli-ls9 -loglevel warning -stats -i pipe: -map_metadata -1 -map_chapters -1 -map_metadata:s -1 -fflags +bitexact -empty_hdlr_name 1 -map $g_vidstream $g_map_audio -filter:v \"${g_vidscale}\" -c:v libx265 -crf 25 -x265-params \"${x265_params}\" -pix_fmt yuv420p10le -max_muxing_queue_size 9999 $g_audio_codec_opts $g_audio_metadata $g_audio_disposition -threads $g_frame_threads -f matroska pipe:' >\"$g_viddone-raw\"" >"$g_tmp"/cmd
 
   # fix duration/timestamps and subtitles
   if [ -n "$g_map_orig_subs" ]
