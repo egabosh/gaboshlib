@@ -166,8 +166,10 @@ function g_compress_video2 {
   g_viddone="$g_tmp/$g_vidbasename-$g_rnd-DONE.mkv"
 
   # Remux into a streamable MKV intermediate (all codecs pass through, MKV header is always first)
+  # Filter the noisy decoder/muxer warnings from stderr (corrupt TS packets, reorder buffer, hints),
+  # keep the "-stats" progress line. "grep -v" may emit nothing and return 1 -> guard for errexit.
   g_echo "Remux ${g_vid} into a streamable MKV intermediate (all codecs pass through, MKV header is always first) to ${g_viddone}-streamable"
-  ffmpeg -loglevel warning -stats -i "${g_vid}" -map 0:v -map 0:a -c copy -ignore_unknown -f matroska "${g_viddone}-streamable" < /dev/null 2>&1
+  ffmpeg -loglevel warning -stats -i "${g_vid}" -map 0:v -map 0:a -c copy -ignore_unknown -f matroska "${g_viddone}-streamable" < /dev/null 2>&1 | grep --line-buffered -v -E '^\[[^]]* @|Last message repeated|Consider increasing' || true
 
   # Fallback: if MKV remux fails, use original file directly via symlink
   if ! [ -f "${g_viddone}-streamable" ]
