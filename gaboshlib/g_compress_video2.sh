@@ -63,8 +63,8 @@ function g_compress_video2 {
   local g_vid=""
   local g_remotedockerffmpeg=""
   local g_stereo=false
-  local g_threads=1
-  local g_remotedockerffmpegport=22
+  local g_threads=""
+  local g_remotedockerffmpegport=""
   local OPTIND=1
   while getopts "f:r:st:p:" opt
   do
@@ -88,6 +88,10 @@ function g_compress_video2 {
   [[ -n "$COMPUTENODE" ]] && [[ -z "$g_remotedockerffmpeg" ]] && g_remotedockerffmpeg=$COMPUTENODE
   [[ -n "$COMPUTENODESSHPORT" ]] && [[ -z "$g_remotedockerffmpegport" ]] && g_remotedockerffmpegport=$COMPUTENODESSHPORT
   [[ -n "$COMPUTENODECPUTHREADS" ]] && [[ -z "$g_threads" ]] && g_threads=$COMPUTENODECPUTHREADS
+
+  # defaults fallback
+  [[ -z "$g_remotedockerffmpegport" ]] && g_remotedockerffmpegport=22
+  [[ -z "$g_threads" ]] && g_threads=1
 
   # Validate thread count (positive integer, 0 = auto/all cores)
   if ! [[ "$g_threads" =~ ^[0-9]+$ ]]
