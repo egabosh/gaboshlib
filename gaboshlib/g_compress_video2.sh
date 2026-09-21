@@ -339,8 +339,14 @@ function g_compress_video2 {
   local g_vidwidth=`cat "$g_tmp"/vidinfo | egrep "Stream.+Video" | perl -pe 's/ /\n/g;' | egrep "[0-9]x[0-9]" | cut -d"x" -f 1 | perl -pe 's/[^0-9]//g'`
    
   local g_vidmaxrate=$(ffprobe -v error -select_streams v:0 -show_entries stream=bit_rate -of csv=p=0 "$g_vid" 2>/dev/null)
-  [ -n "$g_vidmaxrate" ] && g_vidmaxrate=$(( g_vidmaxrate / 1000 ))
-  # MKV/VBR-Streams speichern keine Bitrate -> aus Dateigröße und Dauer ableiten
+  # Convert to kb/s only if it is a real number; ffprobe reports "N/A" if the stream has no stored bit rate (VBR)
+  if [[ "$g_vidmaxrate" =~ ^[0-9]+$ ]]
+  then
+    g_vidmaxrate=$(( g_vidmaxrate / 1000 ))
+  else
+    g_vidmaxrate=""
+  fi
+  # MKV/VBR streams do not store a bit rate - derive it from file size and duration
   if [ -z "$g_vidmaxrate" ]
   then
     local g_vid_dur=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$g_vid" 2>/dev/null)
