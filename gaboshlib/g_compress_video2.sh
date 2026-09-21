@@ -84,6 +84,11 @@ function g_compress_video2 {
     return 1
   fi
 
+  # read compute nmode vars if exist
+  [[ -n "$COMPUTENODE" ]] && [[ -z "$g_remotedockerffmpeg" ]] && g_remotedockerffmpeg=$COMPUTENODE
+  [[ -n "$COMPUTENODESSHPORT" ]] && [[ -z "$g_remotedockerffmpegport" ]] && g_remotedockerffmpegport=$COMPUTENODESSHPORT
+  [[ -n "$COMPUTENODECPUTHREADS" ]] && [[ -z "$g_threads" ]] && g_threads=$COMPUTENODECPUTHREADS
+
   # Validate thread count (positive integer, 0 = auto/all cores)
   if ! [[ "$g_threads" =~ ^[0-9]+$ ]]
   then
