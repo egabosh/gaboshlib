@@ -166,6 +166,7 @@ function g_compress_video2 {
   g_viddone="$g_tmp/$g_vidbasename-$g_rnd-DONE.mkv"
 
   # Remux into a streamable MKV intermediate (all codecs pass through, MKV header is always first)
+  g_echo "Remux ${g_vid} into a streamable MKV intermediate (all codecs pass through, MKV header is always first) to ${g_viddone}-streamable"
   ffmpeg -loglevel warning -stats -i "${g_vid}" -map 0:v -map 0:a -c copy -ignore_unknown -f matroska "${g_viddone}-streamable" < /dev/null 2>&1
 
   # Fallback: if MKV remux fails, use original file directly via symlink
@@ -176,6 +177,7 @@ function g_compress_video2 {
   fi
 
   # Re-probe the streamable copy for accurate stream info
+  g_echo "Re-probe ${g_viddone}-streamable the streamable copy for accurate stream info"
   ffmpeg -hide_banner -i "${g_viddone}-streamable" 2>&1 | grep -E '^(Input |  Duration|  Program|  Stream)' | perl -pe 's/\[0x[0-9]+\]//g' >"$g_tmp"/vidinfo
 
   cat "$g_tmp"/vidinfo
