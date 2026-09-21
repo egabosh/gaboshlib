@@ -3,12 +3,17 @@
 # Talks to an OpenAI-compatible /v1/audio/speech proxy directly via HTTP.
 # Requires a shared AI Bearer key (same as llm/stt/tts proxies on ai.lan) in
 # /etc/ai-api-key (format: LLAMA_API_KEY=<hex>), optional.
+# Long input texts are split into per-request chunks (each chunk ends on a
+# newline, paragraph breaks are preserved) so a single request stays within a
+# few minutes of GPU synthesis; each finished chunk is streamed directly into
+# the target WAV.
 
 function g_tts {
 
  # default settings
- local g_tt_speed="0.6"
- local g_tt_voice="victoria"
+ local g_tt_speed="1.0"
+ local g_tt_voice="standard"
+ local g_tt_ref=""
  local g_tt_host="localhost"
  local g_tt_port="8084"
  local g_tt_file=""
@@ -16,6 +21,7 @@ function g_tts {
  local g_tt_text=""
  local g_tt_keyfile="/etc/ai-api-key"
  local g_tt_key=""
+ local g_tt_chunk="2000"
 
  # derive the default output name from the input for later use
  function f_tts_usage {
@@ -27,12 +33,16 @@ Convert text to audio using Kokoro/Piper TTS (OpenAI-compatible).
 Arguments:
   -i FILE     Input text FILE or literal text string (required)
   -o FILE     Output audio file (default: <input>.wav)
-  -s SPEED    Speaking speed (default: 0.6)
-  -v VOICE    Voice name (default: victoria; any name maps to a server voice)
+  -s SPEED    Speaking speed (default: 1.0)
+  -v VOICE    Voice name (default: standard; any name maps to a server voice)
+  -r REF      Clone the voice from REF_DIR/<REF>.wav on the TTS server
+              (default: server standard voice; see /opt/tts2/refs on compute)
   -h HOST     TTS server host or full URL (default: localhost)
               Plain host -> http://host:PORT ; pass https://... to use it as-is,
               e.g. -h https://tts.defiant.dedyn.io
   -p PORT     TTS server port (default: 8084, ignored for full URLs in -h)
+  -c CHARS    Max chars per request chunk (default: 2000). Chunks end on a
+              newline, paragraph breaks are kept; only matters for long texts.
   -k KEY      API key (optional; default: read /etc/ai-api-key if present)
   -K KEYFILE  Key file with LLAMA_API_KEY=<key> line (default: /etc/ai-api-key)
   --help      Show this help
@@ -54,8 +64,10 @@ EOF
    -o) g_tt_out="$2"; shift 2 ;;
    -s) g_tt_speed="$2"; shift 2 ;;
    -v) g_tt_voice="$2"; shift 2 ;;
+   -r) g_tt_ref="$2"; shift 2 ;;
    -h) g_tt_host="$2"; shift 2 ;;
    -p) g_tt_port="$2"; shift 2 ;;
+   -c) g_tt_chunk="$2"; shift 2 ;;
    -k) g_tt_key="$2"; shift 2 ;;
    -K) g_tt_keyfile="$2"; shift 2 ;;
    --help|-help) f_tts_usage; return 0 ;;
@@ -105,23 +117,194 @@ EOF
   fi
  fi
 
- # build JSON payload into a temp file (avoids shell quoting problems)
- local g_tt_payload="$g_tmp/tts_payload.json"
- mkdir -p "$g_tmp"
- python3 -c 'import json,sys; print(json.dumps({"input":sys.argv[1],"voice":sys.argv[2],"speed":float(sys.argv[3])}))' \
-  "$g_tt_text" "$g_tt_voice" "$g_tt_speed" > "$g_tt_payload" 2>/dev/null
+ # helper: split text into chunks, each chunk ending on a newline
+ function f_tts_split {
+  # Args: $1 max chars per chunk, $2 the text, $3 output directory.
+  # Writes zero-padded chunk files and prints the number of chunks to stdout.
+  python3 - "$1" "$2" "$3" <<'PY'
+import os, sys
+maxlen = int(sys.argv[1])
+text   = sys.argv[2]
+outdir = sys.argv[3]
+chunks = []
+i = 0
+n = len(text)
+while i < n:
+    # whole remaining text fits: take it as the final chunk
+    if i + maxlen >= n:
+        chunks.append(text[i:])
+        break
+    # prefer the last newline inside the window so chunks end on a newline and
+    # paragraph breaks (empty lines) stay intact
+    cut = text.rfind('\n', i, i + maxlen)
+    if cut > i:
+        chunk_end = cut + 1
+    else:
+        # no newline inside the window (huge unbroken line): cut at a space,
+        # falling back to a hard cut so a chunk never exceeds maxlen
+        cut = text.rfind(' ', i, i + maxlen)
+        chunk_end = cut if cut > i else i + maxlen
+    chunks.append(text[i:chunk_end])
+    i = chunk_end
+# drop a trailing chunk that contains only newlines (text ended on a break)
+while chunks and set(chunks[-1]) <= {'\n'}:
+    chunks.pop()
+for j, c in enumerate(chunks):
+    with open(os.path.join(outdir, 'chunk_%04d' % j), 'w') as f:
+        f.write(c)
+print(len(chunks))
+PY
+ }
 
- # send request directly to the TTS service, capture only the WAV bytes
- # (-f makes curl fail on HTTP errors like 401/500 instead of saving the body)
- if ! curl -s -f --max-time 1800 -X POST "${g_tt_url}/v1/audio/speech" \
-   -H 'Content-Type: application/json' \
-   ${g_tt_key:+-H "Authorization: Bearer $g_tt_key"} \
-   -d @"$g_tt_payload" > "$g_tt_out"
+ # helper: concatenate WAV chunk files into a single output file
+ function f_tts_wav_init {
+  # Create OUT with a zero-sized mono/16-bit/24000 Hz placeholder header.
+  # PCM is appended later (f_tts_wav_append) and the header is patched at the
+  # end (f_tts_wav_finish), so the chunks stream straight into the target file
+  # instead of staging all parts and merging once.
+  python3 - "$1" <<'PY'
+import sys, struct
+with open(sys.argv[1], 'wb') as f:
+    f.write(b'RIFF')
+    f.write(struct.pack('<I', 36))
+    f.write(b'WAVE')
+    f.write(b'fmt ')
+    f.write(struct.pack('<IHHIIHH', 16, 1, 1, 24000, 48000, 2, 16))
+    f.write(b'data')
+    f.write(struct.pack('<I', 0))
+PY
+ }
+
+ function f_tts_wav_append {
+  # Append the PCM payload of a synthesized chunk WAV to the target file and
+  # echo the number of appended PCM bytes.
+  python3 - "$1" "$2" <<'PY'
+import sys, struct
+chunk = open(sys.argv[1], 'rb').read()
+n = len(chunk)
+d = 12
+while d < n:
+    size = struct.unpack('<I', chunk[d+4:d+8])[0]
+    if chunk[d:d+4] == b'data':
+        pcm = chunk[d+8:d+8+size]
+        with open(sys.argv[2], 'ab') as f:
+            f.write(pcm)
+        print(len(pcm))
+        break
+    d += 8 + size
+PY
+ }
+
+ function f_tts_wav_finish {
+  # Patch the placeholder header: data size and total RIFF size. The frame
+  # count is derived by readers from the data size, so it is not written.
+  python3 - "$1" "$2" <<'PY'
+import sys, struct
+p, total = sys.argv[1], int(sys.argv[2])
+with open(p, 'rb+') as f:
+    f.seek(4)
+    f.write(struct.pack('<I', 36 + total))
+    f.seek(40)
+    f.write(struct.pack('<I', total))
+PY
+ }
+
+ # split the text into chunks (boundaries at newlines, paragraphs kept)
+ local g_tt_chunkdir="$g_tmp/tts_chunks.$$"
+ local g_tt_payload="$g_tmp/tts_payload.json"
+ mkdir -p "$g_tmp" "$g_tt_chunkdir"
+ local g_tt_count
+ g_tt_count=$(f_tts_split "$g_tt_chunk" "$g_tt_text" "$g_tt_chunkdir")
+
+ # guard against an empty split result
+ if [[ -z "$g_tt_count" ]] || [[ "$g_tt_count" -lt 1 ]]
  then
-  g_echo_error "Synthesis failed."
+  g_echo_error "Empty input text after chunking."
   return 1
  fi
 
- g_echo_ok "Done! Output: $g_tt_out ($(du -h "$g_tt_out" | cut -f1))"
- return 0
+  # synthesize each chunk as its own request, streaming the PCM of every
+  # finished chunk directly into the target WAV (placeholder header first,
+  # sizes patched at the end)
+  if ! f_tts_wav_init "$g_tt_out"
+  then
+   g_echo_error "Creating output WAV failed."
+   return 1
+  fi
+  local g_tt_i=0
+  local g_tt_part=""
+  local g_tt_partname=""
+  local g_tt_appended=0
+  local g_tt_pcm_total=0
+  for (( g_tt_i=0; g_tt_i<g_tt_count; g_tt_i++ ))
+  do
+   g_tt_partname=$(printf 'chunk_%04d' "$g_tt_i")
+   g_tt_part="$g_tt_chunkdir/$g_tt_partname.wav"
+   g_echo "Chunk $(( g_tt_i + 1 ))/$g_tt_count ($(wc -c < "$g_tt_chunkdir/$g_tt_partname") chars): start."
+   # build JSON payload into a temp file (avoids shell quoting problems)
+   python3 -c 'import json,sys; print(json.dumps({"input":open(sys.argv[1]).read(),"voice":sys.argv[2],"speed":float(sys.argv[3]),"ref":(sys.argv[4] or None)}))' \
+    "$g_tt_chunkdir/$g_tt_partname" "$g_tt_voice" "$g_tt_speed" "$g_tt_ref" > "$g_tt_payload" 2>/dev/null
+   # send request directly to the TTS service, capture only the WAV bytes
+   # (-f makes curl fail on HTTP errors like 401/500 instead of saving the body)
+   #
+   # Retry transient failures: the XTTS service exits after an idle timeout and
+   # systemd needs ~10 s to respawn it, so a back-to-back batch can hit
+   # "connection refused" (7), empty reply (52), a truncated WAV body from a
+   # process that died mid-stream (18), or HTTP 502/503/504 from traefik while
+   # it resolves the dying backend (22). Fail-fast on everything else.
+   local g_tt_rc=0
+   local g_tt_attempt=0
+   local g_tt_retry_max=5
+   local g_tt_backoff=3
+   for (( g_tt_attempt=1; g_tt_attempt<=g_tt_retry_max; g_tt_attempt++ ))
+   do
+    curl -s -f --max-time 1800 -X POST "${g_tt_url}/v1/audio/speech" \
+     -H 'Content-Type: application/json' \
+     ${g_tt_key:+-H "Authorization: Bearer $g_tt_key"} \
+     -d @"$g_tt_payload" > "$g_tt_part"
+    g_tt_rc=$?
+    if [[ "$g_tt_rc" -eq 0 ]]
+    then
+     break
+    fi
+    case "$g_tt_rc" in
+     7|18|22|28|52|56)
+      g_echo_warn "Chunk $(( g_tt_i + 1 ))/$g_tt_count attempt $g_tt_attempt failed (curl $g_tt_rc), retrying in ${g_tt_backoff}s..."
+      sleep "$g_tt_backoff"
+      g_tt_backoff=$(( g_tt_backoff * 2 ))
+      [[ "$g_tt_backoff" -gt 20 ]] && g_tt_backoff=20
+      ;;
+     *)
+      g_echo_error "Synthesis failed on chunk $(( g_tt_i + 1 ))/$g_tt_count (curl $g_tt_rc)."
+      rm -f "$g_tt_out"
+      return 1
+      ;;
+    esac
+   done
+   if [[ "$g_tt_rc" -ne 0 ]]
+   then
+    g_echo_error "Synthesis failed on chunk $(( g_tt_i + 1 ))/$g_tt_count after $g_tt_retry_max attempts."
+    rm -f "$g_tt_out"
+    return 1
+   fi
+   g_tt_appended=$(f_tts_wav_append "$g_tt_part" "$g_tt_out") || {
+    g_echo_error "Appending chunk $(( g_tt_i + 1 ))/$g_tt_count to output failed."
+    rm -f "$g_tt_out"
+    return 1
+   }
+   g_tt_pcm_total=$(( g_tt_pcm_total + g_tt_appended ))
+   rm -f "$g_tt_part"
+   g_echo_ok "Chunk $(( g_tt_i + 1 ))/$g_tt_count done."
+  done
+
+  # patch the placeholder header with the accumulated PCM size
+  if ! f_tts_wav_finish "$g_tt_out" "$g_tt_pcm_total"
+  then
+   g_echo_error "Patching WAV header failed."
+   rm -f "$g_tt_out"
+   return 1
+  fi
+
+  g_echo_ok "Done! Output: $g_tt_out ($(du -h "$g_tt_out" | cut -f1))"
+  return 0
 }
