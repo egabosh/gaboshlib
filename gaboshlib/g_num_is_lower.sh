@@ -19,11 +19,6 @@ function g_num_is_lower_equal {
   g_num_valid_number "$f_num" "$f_checklower" || return 1
  
   g_calc "${f_num} <= ${f_checklower}"
-  if [[ -z "$g_calc_result" ]]
-  then
-    echo "${FUNCNAME}: empty g_calc_result" 1>&2
-    return 1
-  fi
   if [ "${g_calc_result}" -ne 0 ]
   then
     return 0
@@ -54,11 +49,6 @@ function g_num_is_lower {
   g_num_valid_number "$f_num" "$f_checklower" || return 1
  
   g_calc "${f_num} < ${f_checklower}"
-  if [[ -z "$g_calc_result" ]]
-  then
-    echo "${FUNCNAME}: empty g_calc_result" 1>&2
-    return 1
-  fi
   if [ "${g_calc_result}" -ne 0 ]
   then
     return 0
