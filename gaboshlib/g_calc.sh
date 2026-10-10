@@ -11,8 +11,14 @@ function g_calc {
   # check if bc is already running
   if [[ -z "$g_fd_bc_in" || -z "$g_fd_bc_out" || ${g_jobs[*]} != *bc* ]]
   then
-    local bc_input="$g_tmp/$$-g_bc_input"
-    local bc_output="$g_tmp/$$-g_bc_output"
+    # Use ${BASHPID} instead of $$ so every (sub)shell gets its own bc daemon
+    # and fifo pair. In subshells $$ stays at the parent PID, so all of them
+    # raced on the same fifo pair: requests and responses got interleaved and
+    # orphaned daemons of finished subshells kept consuming/reading the shared
+    # fifos, which produced silent wrong results. ${BASHPID} is the PID of the
+    # current (sub)shell, so each caller is isolated.
+    local bc_input="$g_tmp/${BASHPID}-g_bc_input"
+    local bc_output="$g_tmp/${BASHPID}-g_bc_output"
     # create fifo pipe
     rm -f "$bc_input" "$bc_output"
     mkfifo "$bc_input" "$bc_output"
