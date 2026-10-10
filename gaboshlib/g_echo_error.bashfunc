@@ -4,11 +4,22 @@ function g_echo_error {
 
  [ -z "$1" ] && return 1
 
+ # ANSI colors only when stderr is a terminal (keeps pipe and log output clean)
+ local f_mcolor="\033[97m"
+ local f_tcolor="\033[31m"
+ local f_reset="\033[0m"
+ if [[ ! -t 2 ]] || [[ -n ${NO_COLOR+x} ]]
+ then
+  f_mcolor=""
+  f_tcolor=""
+  f_reset=""
+ fi
+
  if [[ -n ${FUNCNAME[1]} ]]
  then
-   printf "\033[97m%(%Y-%m-%d %H:%M:%S)T \033[31m[${FUNCNAME[1]}] ERROR: %s\033[0m\n" -1 "$*" 1>&2
+   printf "${f_mcolor}%(%Y-%m-%d %H:%M:%S)T ${f_tcolor}[${FUNCNAME[1]}] ERROR: %s${f_reset}\n" -1 "$*" 1>&2
  else
-   printf "\033[97m%(%Y-%m-%d %H:%M:%S)T \033[31mERROR: %s\033[0m\n" -1 "$*" 1>&2
+   printf "${f_mcolor}%(%Y-%m-%d %H:%M:%S)T ${f_tcolor}ERROR: %s${f_reset}\n" -1 "$*" 1>&2
  fi
 
  g_logger ERROR: $@
