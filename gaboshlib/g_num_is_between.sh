@@ -30,11 +30,6 @@ function g_num_is_between {
 
   # Check which is the low (from) and the high (to) number
   g_calc "$f_between1 < $f_between2"
-  if [[ -z "$g_calc_result" ]]
-  then
-    echo "${FUNCNAME}: empty g_calc_result" 1>&2
-    return 1
-  fi
   if [ "$g_calc_result" -ne 0 ]
   then
     local f_from=$f_between1
@@ -45,18 +40,8 @@ function g_num_is_between {
   fi
   # Check if given number is in or out range
   g_calc "$f_num < $f_from"
-  if [[ -z "$g_calc_result" ]]
-  then
-    echo "${FUNCNAME}: empty g_calc_result" 1>&2
-    return 1
-  fi
   local g_calc_result_from="$g_calc_result"
   g_calc "$f_num > $f_to"
-  if [[ -z "$g_calc_result" ]]
-  then
-    echo "${FUNCNAME}: empty g_calc_result" 1>&2
-    return 1
-  fi
   local g_calc_result_to="$g_calc_result"
   if [ "$g_calc_result_from" -ne 0 ] || [ "$g_calc_result_to" -ne 0 ]
   then
