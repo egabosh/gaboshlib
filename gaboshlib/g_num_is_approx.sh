@@ -11,18 +11,8 @@ function g_num_is_approx {
   g_num_valid_number "${f_num}" "${f_base}" "${f_percentage_up}" "${f_percentage_down}" || return 1
  
   g_calc "${f_base} - (${f_base} / 100 * ${f_percentage_down})"
-  if [[ -z "$g_calc_result" ]]
-  then
-    echo "${FUNCNAME}: empty g_calc_result" 1>&2
-    return 1
-  fi
   local f_from=${g_calc_result}
   g_calc "${f_base} + (${f_base} / 100 * ${f_percentage_up})"
-  if [[ -z "$g_calc_result" ]]
-  then
-    echo "${FUNCNAME}: empty g_calc_result" 1>&2
-    return 1
-  fi
   local f_to=${g_calc_result}
 
   g_num_is_between ${f_num} ${f_from} ${f_to}
