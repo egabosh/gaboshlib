@@ -47,17 +47,25 @@ g_syslogtag="g_bash-script:$g_scriptname[$$]"
 [ $g_scriptname = "bash" ] || g_logger STARTING $g_scriptname
 
 
-# red STDERR output
-exec 9>&2
-exec 8> >(
-    while IFS='' read -r line || [ -n "$line" ]; do
-       echo -e "\033[31m${line}\033[0m"
-    done
-)
+# red STDERR output - terminals only: in pipes and jobs stderr must
+# stay a separate, clean stream (machine-parsed stdout breaks when
+# both merge, and ANSI codes pollute logs). Same gate as g_echo*.
+# Helpers stay defined for compatibility (explicit callers); without
+# the gate below fd 8/9 do not exist and calling them fails loudly,
+# never silently.
 function undirect(){ exec 2>&9; }
 function redirect(){ exec 2>&8; }
-trap "redirect;" DEBUG
-PROMPT_COMMAND='undirect;'
+if [[ -t 2 ]] && [[ -z ${NO_COLOR+x} ]]
+then
+  exec 9>&2
+  exec 8> >(
+      while IFS='' read -r line || [ -n "$line" ]; do
+         echo -e "\033[31m${line}\033[0m"
+      done
+  )
+  trap "redirect;" DEBUG
+  PROMPT_COMMAND='undirect;'
+fi
 
 # LANG for "." as decimal separator (and not e.g. in German ",")
 export LC_NUMERIC=C
